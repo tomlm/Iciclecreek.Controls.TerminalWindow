@@ -1,0 +1,35 @@
+name: BuildAndRunTests
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+    - src/**
+  pull_request:
+    branches: [ "main" ]
+    paths:
+    - src/**
+    
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Iciclecreek.Avalonia.TerminalWindow
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: 9.0.x
+
+    - name: Restore dependencies
+      run: dotnet restore src/Iciclecreek.Avalonia.TerminalWindow.sln 
+
+    - name: Build
+      run: dotnet build --no-restore src/Iciclecreek.Avalonia.TerminalWindow.sln --property WarningLevel=0
+      
+    - name: Test
+      run: dotnet test --no-build --verbosity normal src/Iciclecreek.Avalonia.TerminalWindow.sln
