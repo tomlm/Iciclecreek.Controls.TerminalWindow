@@ -9,7 +9,7 @@ using Avalonia.Media;
 // ReSharper disable MemberCanBePrivate.Global
 // ReSharper disable UnusedMember.Global
 // ReSharper disable NotResolvedInText
-namespace Iciclecreek.Avalonia.TerminalWindow.Buffer
+namespace Iciclecreek.Avalonia.Terminal.Buffer
 {
     internal readonly struct Pixel : IEquatable<Pixel>
     {

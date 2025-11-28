@@ -1,4 +1,4 @@
-namespace Iciclecreek.Avalonia.TerminalWindow.Buffer
+namespace Iciclecreek.Avalonia.Terminal.Buffer
 {
     public enum CaretStyle : byte
     {

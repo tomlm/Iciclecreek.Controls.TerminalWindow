@@ -3,7 +3,7 @@ using Avalonia.Media;
 
 // ReSharper disable UnusedMember.Global
 
-namespace Iciclecreek.Avalonia.TerminalWindow.Buffer
+namespace Iciclecreek.Avalonia.Terminal.Buffer
 {
     internal static class PixelOperations
     {

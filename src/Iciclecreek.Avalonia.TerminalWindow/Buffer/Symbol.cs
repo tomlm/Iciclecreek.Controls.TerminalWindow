@@ -9,7 +9,7 @@ using System.Text.Json.Serialization;
 using NeoSmart.Unicode;
 using Wcwidth;
 
-namespace Iciclecreek.Avalonia.TerminalWindow.Buffer
+namespace Iciclecreek.Avalonia.Terminal.Buffer
 {
 
     [DebuggerDisplay("'{GetText()}'")]

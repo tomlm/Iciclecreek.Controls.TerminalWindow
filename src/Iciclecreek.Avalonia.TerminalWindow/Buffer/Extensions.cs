@@ -3,7 +3,7 @@ using System;
 using System.Text;
 using Wcwidth;
 
-namespace Iciclecreek.Avalonia.TerminalWindow.Buffer
+namespace Iciclecreek.Avalonia.Terminal.Buffer
 {
     internal static class Extensions
     {

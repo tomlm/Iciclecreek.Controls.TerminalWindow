@@ -1,5 +1,5 @@
 
-namespace Iciclecreek.Avalonia.TerminalWindow.Buffer
+namespace Iciclecreek.Avalonia.Terminal.Buffer
 {
     internal static class CaretStyleExtensions
     {

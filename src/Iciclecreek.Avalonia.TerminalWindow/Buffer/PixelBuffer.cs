@@ -3,11 +3,11 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json.Serialization;
 using Avalonia;
-using Iciclecreek.Avalonia.TerminalWindow.Buffer;
+using Iciclecreek.Avalonia.Terminal.Buffer;
 
 // ReSharper disable UnusedMember.Global
 
-namespace Iciclecreek.Avalonia.TerminalWindow.Buffer
+namespace Iciclecreek.Avalonia.Terminal.Buffer
 {
     internal class PixelBuffer
     {
@@ -85,12 +85,7 @@ namespace Iciclecreek.Avalonia.TerminalWindow.Buffer
                 {
                     Pixel pixel = _buffer[i, j];
 
-                    if (pixel.IsCaret())
-                    {
-                        stringBuilder.Append('Ꮖ');
-                        i += Math.Max(pixel.Width, (ushort)1);
-                    }
-                    else if (pixel.Width > 0)
+                    if (pixel.Width > 0)
                     {
                         stringBuilder.Append(pixel.Symbol.GetText());
                         i += pixel.Width;
