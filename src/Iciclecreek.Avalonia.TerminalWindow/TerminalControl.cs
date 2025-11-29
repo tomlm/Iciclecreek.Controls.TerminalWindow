@@ -42,6 +42,16 @@ namespace Iciclecreek.Avalonia.Terminal
                 nameof(FontSize),
                 defaultValue: 12);
 
+        public static readonly StyledProperty<FontStyle> FontStyleProperty =
+            AvaloniaProperty.Register<TerminalControl, FontStyle>(
+                nameof(FontStyle),
+                defaultValue: FontStyle.Normal);
+
+        public static readonly StyledProperty<FontWeight> FontWeightProperty =
+            AvaloniaProperty.Register<TerminalControl, FontWeight>(
+                nameof(FontWeight),
+                defaultValue: FontWeight.Normal);
+
         public static readonly StyledProperty<IBrush> SelectionBrushProperty =
             AvaloniaProperty.Register<TerminalControl, IBrush>(
                 nameof(SelectionBrush),
@@ -49,8 +59,8 @@ namespace Iciclecreek.Avalonia.Terminal
 
         static TerminalControl()
         {
-            AffectsRender<TerminalControl>(FontFamilyProperty, FontSizeProperty, SelectionBrushProperty);
-            AffectsMeasure<TerminalControl>(FontFamilyProperty, FontSizeProperty, BufferSizeProperty);
+            AffectsRender<TerminalControl>(FontFamilyProperty, FontSizeProperty, FontStyleProperty, FontWeightProperty, SelectionBrushProperty);
+            AffectsMeasure<TerminalControl>(FontFamilyProperty, FontSizeProperty, FontStyleProperty, FontWeightProperty, BufferSizeProperty);
             FocusableProperty.OverrideDefaultValue<TerminalControl>(true);
         }
 
@@ -86,6 +96,18 @@ namespace Iciclecreek.Avalonia.Terminal
         {
             get => GetValue(FontSizeProperty);
             set => SetValue(FontSizeProperty, value);
+        }
+
+        public FontStyle FontStyle
+        {
+            get => GetValue(FontStyleProperty);
+            set => SetValue(FontStyleProperty, value);
+        }
+
+        public FontWeight FontWeight
+        {
+            get => GetValue(FontWeightProperty);
+            set => SetValue(FontWeightProperty, value);
         }
 
         public IBrush SelectionBrush
@@ -271,7 +293,7 @@ namespace Iciclecreek.Avalonia.Terminal
 
         private void UpdateTextMetrics()
         {
-            var typeface = new Typeface(FontFamily);
+            var typeface = new Typeface(FontFamily, FontStyle, FontWeight);
             _measureText = new FormattedText(
                 "W", // Use 'W' as a wide character for measurement
                 System.Globalization.CultureInfo.CurrentCulture,
@@ -304,6 +326,13 @@ namespace Iciclecreek.Avalonia.Terminal
 
         public override void Render(DrawingContext context)
         {
+            // Capture control-level properties into locals so rendering does not read or modify control properties later.
+            var localFontFamily = FontFamily;
+            var localFontSize = FontSize;
+            var localFontStyle = FontStyle;
+            var localFontWeight = FontWeight;
+            var localSelectionBrush = SelectionBrush;
+
             // Fill background
             context.FillRectangle(Brushes.Black, new Rect(Bounds.Size));
 
@@ -311,7 +340,8 @@ namespace Iciclecreek.Avalonia.Terminal
             var cellWidth = Bounds.Width / _bufferSize.Width;
             var cellHeight = Bounds.Height / _bufferSize.Height;
 
-            var typeface = new Typeface(FontFamily);
+            // Use default typeface for characters without specific styling
+            var defaultTypeface = new Typeface(localFontFamily, localFontStyle, localFontWeight);
             
             // Get normalized selection for rendering
             var (selStart, selEnd) = GetNormalizedSelection();
@@ -321,6 +351,9 @@ namespace Iciclecreek.Avalonia.Terminal
             var textBuilder = new StringBuilder();
             Color? currentFg = null;
             Color? currentBg = null;
+            FontStyle? currentStyle = null;
+            FontWeight? currentWeight = null;
+            TextDecorationLocation? currentDecoration = null;
             double startX = 0;
             int startCol = 0;
 
@@ -334,14 +367,20 @@ namespace Iciclecreek.Avalonia.Terminal
                     var pixel = _pixels[x, y];
                     var pixelFg = pixel.Foreground != default ? pixel.Foreground : Colors.White;
                     var pixelBg = pixel.Background;
-                    
-                    // Check if this cell is selected
+                    var pixelStyle = pixel.Style ?? localFontStyle;
+                    var pixelWeight = pixel.Weight ?? localFontWeight;
+                    var pixelDecoration = pixel.TextDecoration;
+
+                    // Check if this cell is selected (selection rendering is handled later)
                     bool isSelected = hasSelection && IsInSelection(x, y, selStart, selEnd);
                     
-                    // Check if we need to flush the current text run
+                    // Check if we need to flush the current text run (also flush on decoration/style/weight changes)
                     bool needsFlush = (currentFg.HasValue && pixelFg != currentFg.Value) ||
-                                     (currentBg.HasValue && pixelBg != currentBg.Value) ||
-                                     x == _pixels.Width - 1;
+                                      (currentBg.HasValue && pixelBg != currentBg.Value) ||
+                                      (currentStyle.HasValue && pixelStyle != currentStyle.Value) ||
+                                      (currentWeight.HasValue && pixelWeight != currentWeight.Value) ||
+                                      (currentDecoration.HasValue && pixelDecoration != currentDecoration) ||
+                                      x == _pixels.Width - 1;
                     
                     if (pixel.Width > 0)
                     {
@@ -351,6 +390,9 @@ namespace Iciclecreek.Avalonia.Terminal
                         {
                             currentFg = pixelFg;
                             currentBg = pixelBg;
+                            currentStyle = pixelStyle;
+                            currentWeight = pixelWeight;
+                            currentDecoration = pixelDecoration;
                             startX = x * cellWidth;
                             startCol = x;
                         }
@@ -363,7 +405,7 @@ namespace Iciclecreek.Avalonia.Terminal
                     // Flush accumulated text
                     if (needsFlush && textBuilder.Length > 0)
                     {
-                        // Draw background for the text run
+                        // Draw background for the text run (respect run background)
                         if (currentBg.HasValue && currentBg.Value != default)
                         {
                             var bgBrush = new SolidColorBrush(currentBg.Value);
@@ -371,15 +413,31 @@ namespace Iciclecreek.Avalonia.Terminal
                             context.FillRectangle(bgBrush, bgRect);
                         }
                         
+                        // Create typeface with the run's styling (use local control defaults, not mutate them)
+                        var runTypeface = new Typeface(localFontFamily, currentStyle.Value, currentWeight.Value);
+                        
                         // Draw the text run
                         var fgBrush = new SolidColorBrush(currentFg.Value);
                         var formattedText = new FormattedText(
                             textBuilder.ToString(),
                             System.Globalization.CultureInfo.CurrentCulture,
                             FlowDirection.LeftToRight,
-                            typeface,
-                            FontSize,
+                            runTypeface,
+                            localFontSize,
                             fgBrush);
+                        
+                        // Apply text decorations for the run if present
+                        if (currentDecoration.HasValue)
+                        {
+                            var decorations = new TextDecorationCollection();
+                            if (currentDecoration.Value.HasFlag(TextDecorationLocation.Underline))
+                                decorations.Add(TextDecorations.Underline[0]);
+                            if (currentDecoration.Value.HasFlag(TextDecorationLocation.Strikethrough))
+                                decorations.Add(TextDecorations.Strikethrough[0]);
+                            if (currentDecoration.Value.HasFlag(TextDecorationLocation.Overline))
+                                decorations.Add(TextDecorations.Overline[0]);
+                            formattedText.SetTextDecorations(decorations);
+                        }
                         
                         context.DrawText(formattedText, new Point(startX, cellY));
                         
@@ -387,6 +445,9 @@ namespace Iciclecreek.Avalonia.Terminal
                         textBuilder.Clear();
                         currentFg = null;
                         currentBg = null;
+                        currentStyle = null;
+                        currentWeight = null;
+                        currentDecoration = null;
                     }
                     
                     // Draw standalone background (no text)
@@ -402,9 +463,12 @@ namespace Iciclecreek.Avalonia.Terminal
                 textBuilder.Clear();
                 currentFg = null;
                 currentBg = null;
+                currentStyle = null;
+                currentWeight = null;
+                currentDecoration = null;
             }
             
-            // Draw selection overlay
+            // Draw selection overlay using captured selection brush (do not mutate control properties)
             if (hasSelection)
             {
                 for (int y = selStart.Y; y <= selEnd.Y; y++)
@@ -418,7 +482,7 @@ namespace Iciclecreek.Avalonia.Terminal
                         (xEnd - xStart + 1) * cellWidth,
                         cellHeight);
                     
-                    context.FillRectangle(SelectionBrush, selRect);
+                    context.FillRectangle(localSelectionBrush, selRect);
                 }
             }
         }
