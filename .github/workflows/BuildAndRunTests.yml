@@ -17,16 +17,16 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout Iciclecreek.Avalonia.TerminalWindow
+    - name: Checkout Iciclecreek.Avalonia.TerminalWindow.sln
       uses: actions/checkout@v4
 
     - name: Setup .NET
       uses: actions/setup-dotnet@v3
       with:
-        dotnet-version: 9.0.x
+        dotnet-version: 10.0.x
 
     - name: Restore dependencies
-      run: dotnet restore src/Iciclecreek.Avalonia.TerminalWindow.sln 
+      run: dotnet restore src/Iciclecreek.Avalonia.TerminalWindow.sln
 
     - name: Build
       run: dotnet build --no-restore src/Iciclecreek.Avalonia.TerminalWindow.sln --property WarningLevel=0
