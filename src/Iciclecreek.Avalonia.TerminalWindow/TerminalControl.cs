@@ -4,14 +4,17 @@ using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Iciclecreek.Avalonia.Terminal;
-using Pty;
+using Pty.Net;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
+using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using XT = global::XTerm;
 
 namespace Iciclecreek.Terminal
@@ -25,7 +28,7 @@ namespace Iciclecreek.Terminal
         private int _bufferSize = 100;
 
         // Process management
-        private System.Diagnostics.Process _process;
+        private Pty.Net.IPtyConnection _ptyConnection;
         private CancellationTokenSource _processCts;
 
         public static readonly DirectProperty<TerminalControl, int> BufferSizeProperty =
@@ -77,7 +80,7 @@ namespace Iciclecreek.Terminal
         public static readonly StyledProperty<string> ProcessProperty =
             AvaloniaProperty.Register<TerminalControl, string>(
                 nameof(Process),
-                defaultValue: "cmd.exe");
+                defaultValue: RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "cmd.exe" : "sh");
 
         public static readonly StyledProperty<IList<string>> ArgsProperty =
             AvaloniaProperty.Register<TerminalControl, IList<string>>(
@@ -198,7 +201,7 @@ namespace Iciclecreek.Terminal
             CleanupProcess();
         }
 
-        private void LaunchProcess()
+        private async void LaunchProcess()
         {
             CleanupProcess();
 
@@ -206,89 +209,91 @@ namespace Iciclecreek.Terminal
             {
                 _processCts = new CancellationTokenSource();
 
-                var startInfo = new ProcessStartInfo
+                // Determine the process to launch based on OS if not explicitly set
+                string processToLaunch = Process;
+                if (string.IsNullOrEmpty(processToLaunch))
                 {
-                    FileName = Process,
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    CreateNoWindow = true
-                };
-
-                if (Args != null && Args.Count > 0)
-                {
-                    foreach (var arg in Args)
-                    {
-                        startInfo.ArgumentList.Add(arg);
-                    }
+                    processToLaunch = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "cmd.exe" : "sh";
                 }
 
-                _process = new System.Diagnostics.Process
+                var options = new PtyOptions
                 {
-                    StartInfo = startInfo,
-                    EnableRaisingEvents = true
+                    Name = processToLaunch,
+                    Cols = _terminal.Cols,
+                    Rows = _terminal.Rows,
+                    Cwd = Environment.CurrentDirectory,
+                    App = processToLaunch
                 };
 
-                _process.OutputDataReceived += OnOutputDataReceived;
-                _process.ErrorDataReceived += OnErrorDataReceived;
-                _process.Exited += OnProcessExited;
+                // Add arguments if provided
+                if (Args != null && Args.Count > 0)
+                {
+                    options.CommandLine = Args.ToArray();
+                }
 
-                _process.Start();
-                _process.BeginOutputReadLine();
-                _process.BeginErrorReadLine();
+                _ptyConnection = await PtyProvider.SpawnAsync(options, _processCts.Token);
+
+                // Start reading from the PTY connection
+                _ = Task.Run(async () => await ReadPtyOutputAsync(_processCts.Token), _processCts.Token);
             }
             catch (Exception ex)
             {
-                _terminal.WriteLine($"Error launching process: {ex.Message}\n");
-            }
-        }
-
-        private void OnOutputDataReceived(object sender, DataReceivedEventArgs e)
-        {
-            if (e.Data != null && !_processCts.Token.IsCancellationRequested)
-            {
-                _terminal.WriteLine(e.Data);
-            }
-        }
-
-        private void OnErrorDataReceived(object sender, DataReceivedEventArgs e)
-        {
-            if (e.Data != null && !_processCts.Token.IsCancellationRequested)
-            {
-                Dispatcher.UIThread.Post(() =>
+                await Dispatcher.UIThread.InvokeAsync(() =>
                 {
-                    // Optionally use a different color for errors
-                    _terminal.WriteLine(e.Data);
+                    _terminal.WriteLine($"Error launching process: {ex.Message}\n");
                 });
             }
         }
 
-        private void OnProcessExited(object sender, EventArgs e)
+        private async Task ReadPtyOutputAsync(CancellationToken cancellationToken)
         {
-            Dispatcher.UIThread.Post(() =>
+            try
             {
-                _terminal.WriteLine($"\nProcess exited with code: {_process?.ExitCode}\n");
-            });
+                var buffer = new byte[8192];
+                while (!cancellationToken.IsCancellationRequested && _ptyConnection != null)
+                {
+                    var bytesRead = await _ptyConnection.ReaderStream.ReadAsync(buffer, 0, buffer.Length, cancellationToken);
+                    if (bytesRead == 0)
+                    {
+                        // Process has exited
+                        await Dispatcher.UIThread.InvokeAsync(() =>
+                        {
+                            _terminal.WriteLine($"\nProcess exited with code: {_ptyConnection?.ExitCode ?? 0}\n");
+                        });
+                        break;
+                    }
+
+                    var output = Encoding.UTF8.GetString(buffer, 0, bytesRead);
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        _terminal.Write(output);
+                        InvalidateVisual();
+                    });
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected when cancellation is requested
+            }
+            catch (Exception ex)
+            {
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    _terminal.WriteLine($"\nError reading from process: {ex.Message}\n");
+                });
+            }
         }
 
         private void CleanupProcess()
         {
             _processCts?.Cancel();
 
-            if (_process != null)
+            if (_ptyConnection != null)
             {
                 try
                 {
-                    _process.OutputDataReceived -= OnOutputDataReceived;
-                    _process.ErrorDataReceived -= OnErrorDataReceived;
-                    _process.Exited -= OnProcessExited;
-
-                    if (!_process.HasExited)
-                    {
-                        _process.Kill();
-                    }
-
-                    _process.Dispose();
+                    _ptyConnection.Kill();
+                    _ptyConnection.Dispose();
                 }
                 catch
                 {
@@ -296,7 +301,7 @@ namespace Iciclecreek.Terminal
                 }
                 finally
                 {
-                    _process = null;
+                    _ptyConnection = null;
                 }
             }
 
