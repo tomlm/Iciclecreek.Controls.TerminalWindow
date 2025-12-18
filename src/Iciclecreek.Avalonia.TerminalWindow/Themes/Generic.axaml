@@ -1,0 +1,34 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="using:Iciclecreek.Terminal">
+    
+    <Style Selector="local|TerminalControl">
+        <Setter Property="Background" Value="Black"/>
+        <Setter Property="Foreground" Value="White"/>
+        <Setter Property="FocusAdorner" Value="{x:Null}"/>
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Grid ColumnDefinitions="*,Auto">
+                    <local:TerminalView Name="PART_TerminalView"
+                                       FontFamily="{TemplateBinding FontFamily}"
+                                       FontSize="{TemplateBinding FontSize}"
+                                       FontStyle="{TemplateBinding FontStyle}"
+                                       FontWeight="{TemplateBinding FontWeight}"
+                                       TextDecorations="{TemplateBinding TextDecorations}"
+                                       ForegroundColor="{TemplateBinding ForegroundColor}"
+                                       BackgroundColor="{TemplateBinding BackgroundColor}"
+                                       SelectionBrush="{TemplateBinding SelectionBrush}"
+                                       Process="{TemplateBinding Process}"
+                                       Args="{TemplateBinding Args}"
+                                       BufferSize="{TemplateBinding BufferSize}"/>                    
+                    <!-- Scrollbar -->
+                    <ScrollBar Name="PART_ScrollBar"
+                              Grid.Column="1"
+                              Orientation="Vertical"
+                              AllowAutoHide="False"/>
+                </Grid>
+            </ControlTemplate>
+        </Setter>
+    </Style>
+    
+</Styles>

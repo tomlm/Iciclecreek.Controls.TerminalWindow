@@ -6,6 +6,9 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
   </PropertyGroup>
   <ItemGroup>
+    <AvaloniaResource Include="Themes\**" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Avalonia" Version="11.3.9" />
     <PackageReference Include="Unicode.net" Version="2.0.0" />
     <PackageReference Include="Wcwidth" Version="4.0.1" />

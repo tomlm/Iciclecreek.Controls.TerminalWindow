@@ -6,6 +6,7 @@
 
     <Application.Styles>
         <FluentTheme />
+        <StyleInclude Source="avares://Iciclecreek.Avalonia.Terminal/Themes/Generic.axaml" />
         <StyleInclude Source="avares://Demo/Assets/Colors.axaml" />
     </Application.Styles>
 </Application>
