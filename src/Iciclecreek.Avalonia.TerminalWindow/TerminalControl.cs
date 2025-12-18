@@ -1,4 +1,4 @@
-﻿using Avalonia;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -26,7 +26,7 @@ namespace Iciclecreek.Terminal
         private FormattedText _measureText;
         private double _charWidth;
         private double _charHeight;
-        private int _bufferSize = 100;
+        private int _bufferSize = 1000;
 
         // Process management
         private IPtyConnection _ptyConnection;
@@ -97,9 +97,10 @@ namespace Iciclecreek.Terminal
                 FontStyleProperty,
                 FontWeightProperty,
                 TextDecorationsProperty,
-                //ForegroundColorProperty,
-                //BackgroundColorProperty,
-                SelectionBrushProperty);
+                ForegroundColorProperty,
+                BackgroundColorProperty,
+                SelectionBrushProperty,
+                BufferSizeProperty);
 
             AffectsMeasure<TerminalControl>(
                 FontFamilyProperty,
@@ -117,6 +118,9 @@ namespace Iciclecreek.Terminal
             Loaded += OnLoaded;
             Unloaded += OnUnloaded;
             
+            // Set initial scrollback
+            _terminal.Options.Scrollback = _bufferSize;
+            
             // Subscribe to terminal data event - this is fired when terminal wants to send data (user input)
             _terminal.DataReceived += OnTerminalDataReceived;
         }
@@ -126,7 +130,7 @@ namespace Iciclecreek.Terminal
             get => _bufferSize;
             set
             {
-                _terminal.Resize(_terminal.Cols, value);
+                _terminal.Options.Scrollback = value;
                 SetAndRaise(BufferSizeProperty, ref _bufferSize, value);
                 InvalidateVisual();
             }
@@ -577,7 +581,26 @@ namespace Iciclecreek.Terminal
             return new Size(desiredWidth, desiredHeight);
         }
 
-        protected override Size ArrangeOverride(Size finalSize) => finalSize;
+        protected override Size ArrangeOverride(Size finalSize)
+        {
+            // Calculate how many columns fit in the allocated width
+            if (_charWidth > 0)
+            {
+                int newCols = Math.Max(1, (int)(finalSize.Width / _charWidth));
+                int newRows = Math.Max(1, (int)(finalSize.Height / _charHeight));
+                
+                // Only resize if dimensions have changed
+                if (newCols != _terminal.Cols || newRows != _terminal.Rows)
+                {
+                    _terminal.Resize(newCols, newRows);
+                    
+                    // Also resize the PTY connection if it exists
+                    _ptyConnection?.Resize(newCols, newRows);
+                }
+            }
+            
+            return finalSize;
+        }
 
 
         public override void Render(DrawingContext context)

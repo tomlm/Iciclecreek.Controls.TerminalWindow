@@ -13,8 +13,6 @@
 		to set the actual DataContext for runtime, set the DataContext property in code (look at App.axaml.cs) -->
 		<vm:MainViewModel />
 	</Design.DataContext>
-	<ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-		<!--<t:TerminalControl x:Name="Term" FontFamily="Consolas" FontSize="14" />-->
-		<terminal:TerminalControl FontFamily="Consolas" FontSize="14" />
-	</ScrollViewer>
+	<!--<t:TerminalControl x:Name="Term" FontFamily="Consolas" FontSize="14" />-->
+	<terminal:TerminalControl FontFamily="Consolas" FontSize="14" />
 </UserControl>
