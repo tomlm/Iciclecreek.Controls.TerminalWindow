@@ -33,7 +33,7 @@ namespace Iciclecreek.Terminal
 
         // Cursor blinking
         private DispatcherTimer _cursorBlinkTimer;
-        private bool _cursorVisible = true;
+        private bool _cursorBlinkOn = true;  // Tracks blink state (on/off phase)
 
         public static readonly DirectProperty<TerminalView, int> BufferSizeProperty =
             AvaloniaProperty.RegisterDirect<TerminalView, int>(
@@ -112,6 +112,21 @@ namespace Iciclecreek.Terminal
                 nameof(CursorColor),
                 defaultValue: Colors.White);
 
+        public static readonly StyledProperty<XT.Common.CursorStyle> CursorStyleProperty =
+            AvaloniaProperty.Register<TerminalView, XT.Common.CursorStyle>(
+                nameof(CursorStyle),
+                defaultValue: XT.Common.CursorStyle.Bar);
+
+        public static readonly StyledProperty<bool> CursorBlinkProperty =
+            AvaloniaProperty.Register<TerminalView, bool>(
+                nameof(CursorBlink),
+                defaultValue: true);
+
+        public static readonly StyledProperty<int> CursorBlinkRateProperty =
+            AvaloniaProperty.Register<TerminalView, int>(
+                nameof(CursorBlinkRate),
+                defaultValue: 530);
+
 
         static TerminalView()
         {
@@ -126,7 +141,9 @@ namespace Iciclecreek.Terminal
                 SelectionBrushProperty,
                 BufferSizeProperty,
                 ViewportYProperty,
-                CursorColorProperty);
+                CursorColorProperty,
+                CursorStyleProperty,
+                CursorBlinkProperty);
 
             AffectsMeasure<TerminalView>(
                 FontFamilyProperty,
@@ -158,7 +175,7 @@ namespace Iciclecreek.Terminal
             // Setup cursor blink timer
             _cursorBlinkTimer = new DispatcherTimer
             {
-                Interval = TimeSpan.FromMilliseconds(_terminal.Options.CursorBlinkRate > 0 ? _terminal.Options.CursorBlinkRate : 530)
+                Interval = TimeSpan.FromMilliseconds(CursorBlinkRate)
             };
             _cursorBlinkTimer.Tick += OnCursorBlinkTick;
         }
@@ -278,15 +295,69 @@ namespace Iciclecreek.Terminal
             set => SetValue(CursorColorProperty, value);
         }
 
+        public XT.Common.CursorStyle CursorStyle
+        {
+            get => GetValue(CursorStyleProperty);
+            set => SetValue(CursorStyleProperty, value);
+        }
+
+        public bool CursorBlink
+        {
+            get => GetValue(CursorBlinkProperty);
+            set => SetValue(CursorBlinkProperty, value);
+        }
+
+        public int CursorBlinkRate
+        {
+            get => GetValue(CursorBlinkRateProperty);
+            set => SetValue(CursorBlinkRateProperty, value);
+        }
+
+        protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+        {
+            base.OnPropertyChanged(change);
+
+            if (change.Property == CursorStyleProperty)
+            {
+                _terminal.Options.CursorStyle = (XT.Common.CursorStyle)change.NewValue!;
+            }
+            else if (change.Property == CursorBlinkProperty)
+            {
+                var blink = (bool)change.NewValue!;
+                _terminal.Options.CursorBlink = blink;
+                
+                if (blink && IsFocused)
+                {
+                    _cursorBlinkTimer.Start();
+                }
+                else
+                {
+                    _cursorBlinkTimer.Stop();
+                    _cursorBlinkOn = true;  // Reset to visible when blinking stops
+                }
+            }
+            else if (change.Property == CursorBlinkRateProperty)
+            {
+                var rate = (int)change.NewValue!;
+                _terminal.Options.CursorBlinkRate = rate;
+                _cursorBlinkTimer.Interval = TimeSpan.FromMilliseconds(rate > 0 ? rate : 530);
+            }
+        }
+
         private void OnLoaded(object sender, RoutedEventArgs e)
         {
+            // Sync terminal options with styled properties
+            _terminal.Options.CursorStyle = CursorStyle;
+            _terminal.Options.CursorBlink = CursorBlink;
+            _terminal.Options.CursorBlinkRate = CursorBlinkRate;
+
             if (!string.IsNullOrEmpty(Process))
             {
                 LaunchProcess();
             }
 
             // Start cursor blinking if enabled
-            if (_terminal.Options.CursorBlink)
+            if (CursorBlink)
             {
                 _cursorBlinkTimer.Start();
             }
@@ -301,9 +372,9 @@ namespace Iciclecreek.Terminal
 
         private void OnCursorBlinkTick(object? sender, EventArgs e)
         {
-            if (_terminal.Options.CursorBlink && IsFocused)
+            if (CursorBlink && IsFocused)
             {
-                _cursorVisible = !_cursorVisible;
+                _cursorBlinkOn = !_cursorBlinkOn;
                 InvalidateVisual();
             }
         }
@@ -434,9 +505,9 @@ namespace Iciclecreek.Terminal
         {
             base.OnGotFocus(e);
 
-            // Reset cursor visibility when focused
-            _cursorVisible = true;
-            if (_terminal.Options.CursorBlink)
+            // Reset blink state to visible when focused
+            _cursorBlinkOn = true;
+            if (CursorBlink)
             {
                 _cursorBlinkTimer.Start();
             }
@@ -457,9 +528,9 @@ namespace Iciclecreek.Terminal
         {
             base.OnLostFocus(e);
 
-            // Stop blinking when not focused, but keep cursor visible
+            // Stop blinking when not focused, but keep cursor visible (hollow block)
             _cursorBlinkTimer.Stop();
-            _cursorVisible = true;
+            _cursorBlinkOn = true;
 
             if (_ptyConnection != null && _terminal.SendFocusEvents)
             {
@@ -774,12 +845,12 @@ namespace Iciclecreek.Terminal
 
         private void RenderCursor(DrawingContext context, int viewportY)
         {
-            // Only show cursor if terminal says it's visible and we're at the bottom (or cursor is in view)
+            // Only show cursor if terminal says it's visible (controlled by escape sequences)
             if (!_terminal.CursorVisible)
                 return;
 
-            // Only show cursor if blink state is visible (or not blinking)
-            if (!_cursorVisible)
+            // Only show cursor if in "on" phase of blink cycle (or not blinking)
+            if (!_cursorBlinkOn)
                 return;
 
             // Get cursor position relative to viewport
@@ -801,8 +872,8 @@ namespace Iciclecreek.Terminal
 
             var cursorBrush = new SolidColorBrush(CursorColor);
 
-            // Render based on cursor style
-            switch (_terminal.Options.CursorStyle)
+            // Render based on cursor style (use property which syncs with terminal)
+            switch (CursorStyle)
             {
                 case XT.Common.CursorStyle.Block:
                     if (IsFocused)
