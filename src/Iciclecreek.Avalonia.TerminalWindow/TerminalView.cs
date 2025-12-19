@@ -898,7 +898,7 @@ namespace Iciclecreek.Terminal
 
         public override void Render(DrawingContext context)
         {
-            StringBuilder sb = new StringBuilder();
+            var scale = VisualRoot?.RenderScaling ?? 1.0;
 
             // Use the terminal buffer's ViewportY to determine what to render
             int viewportY = _terminal.Buffer.ViewportY;
@@ -922,11 +922,14 @@ namespace Iciclecreek.Terminal
                         .TakeWhile(cell2 => cell.Attributes == cell2.Attributes)
                         .Select(cell2 => cell2.Content).ToArray());
 
-                    double posX = x * _charWidth;
-                    double posY = (y - startLine) * _charHeight;
+                    var startX = Snap(x * _charWidth, scale);
+                    var endX = Snap((x + text.Length) * _charWidth, scale);
+                    var startY = Snap((y - startLine) * _charHeight, scale);
+                    var endY = Snap((y - startLine + 1) * _charHeight, scale);
+                    var rect = new Rect(startX, startY, Math.Max(0, endX - startX), Math.Max(0, endY - startY));
 
                     // draw rectangle for line
-                    context.FillRectangle(cell.GetBackgroundBrush(this.Background), new Rect(posX, posY, text.Length * _charWidth, _charHeight));
+                    context.FillRectangle(cell.GetBackgroundBrush(this.Background), rect);
 
                     // draw text
                     var typeface = new Typeface(FontFamily, cell.GetFontStyle(), cell.GetFontWeight());
@@ -937,17 +940,17 @@ namespace Iciclecreek.Terminal
                         typeface,
                         FontSize,
                         cell.GetForegroundBrush(this.Foreground));
-                    context.DrawText(formattedText, new Point(posX, posY));
+                    context.DrawText(formattedText, new Point(startX, startY));
                     x += text.Length;
                     Debug.Assert(text.Length > 0);
                 }
             }
 
             // Render the cursor
-            RenderCursor(context, viewportY);
+            RenderCursor(context, viewportY, scale);
         }
 
-        private void RenderCursor(DrawingContext context, int viewportY)
+        private void RenderCursor(DrawingContext context, int viewportY, double scale)
         {
             // Only show cursor if terminal says it's visible (controlled by escape sequences)
             if (!_terminal.CursorVisible)
@@ -971,8 +974,12 @@ namespace Iciclecreek.Terminal
 
             // Calculate screen position
             int screenY = absoluteCursorY - viewportY;
-            double posX = cursorX * _charWidth;
-            double posY = screenY * _charHeight;
+            double posX = Snap(cursorX * _charWidth, scale);
+            double posY = Snap(screenY * _charHeight, scale);
+            double nextX = Snap((cursorX + 1) * _charWidth, scale);
+            double nextY = Snap((screenY + 1) * _charHeight, scale);
+            double cellWidth = Math.Max(0, nextX - posX);
+            double cellHeight = Math.Max(0, nextY - posY);
 
             var cursorBrush = new SolidColorBrush(CursorColor);
 
@@ -983,7 +990,7 @@ namespace Iciclecreek.Terminal
                     if (IsFocused)
                     {
                         // Filled block when focused
-                        context.FillRectangle(cursorBrush, new Rect(posX, posY, _charWidth, _charHeight));
+                        context.FillRectangle(cursorBrush, new Rect(posX, posY, cellWidth, cellHeight));
 
                         // Draw the character under cursor with inverted colors
                         var line = _terminal.Buffer.GetLine(absoluteCursorY);
@@ -1007,26 +1014,31 @@ namespace Iciclecreek.Terminal
                     {
                         // Outline block when not focused
                         var pen = new Pen(cursorBrush, 1);
-                        context.DrawRectangle(pen, new Rect(posX, posY, _charWidth, _charHeight));
+                        context.DrawRectangle(pen, new Rect(posX, posY, cellWidth, cellHeight));
                     }
                     break;
 
                 case XT.Common.CursorStyle.Underline:
                     {
                         // Draw underline cursor (2 pixels high at bottom of cell)
-                        var underlineHeight = 2.0;
-                        context.FillRectangle(cursorBrush, new Rect(posX, posY + _charHeight - underlineHeight, _charWidth, underlineHeight));
+                        var underlineHeight = Math.Min(2.0, cellHeight);
+                        context.FillRectangle(cursorBrush, new Rect(posX, posY + cellHeight - underlineHeight, cellWidth, underlineHeight));
                     }
                     break;
 
                 case XT.Common.CursorStyle.Bar:
                     {
                         // Draw bar cursor (2 pixels wide at left of cell)
-                        var barWidth = 2.0;
-                        context.FillRectangle(cursorBrush, new Rect(posX, posY, barWidth, _charHeight));
+                        var barWidth = Math.Min(2.0, cellWidth);
+                        context.FillRectangle(cursorBrush, new Rect(posX, posY, barWidth, cellHeight));
                     }
                     break;
             }
+        }
+
+        private static double Snap(double value, double scale)
+        {
+            return Math.Round(value * scale, MidpointRounding.AwayFromZero) / scale;
         }
     }
 }
