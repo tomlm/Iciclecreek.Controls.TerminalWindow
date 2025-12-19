@@ -10,7 +10,6 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
-using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -31,6 +30,10 @@ namespace Iciclecreek.Terminal
         // Process management
         private IPtyConnection _ptyConnection;
         private CancellationTokenSource _processCts;
+
+        // Cursor blinking
+        private DispatcherTimer _cursorBlinkTimer;
+        private bool _cursorVisible = true;
 
         public static readonly DirectProperty<TerminalView, int> BufferSizeProperty =
             AvaloniaProperty.RegisterDirect<TerminalView, int>(
@@ -79,15 +82,15 @@ namespace Iciclecreek.Terminal
                 nameof(TextDecorations),
                 defaultValue: null);
 
-        public static readonly StyledProperty<Color> ForegroundColorProperty =
-            AvaloniaProperty.Register<TerminalView, Color>(
-                nameof(ForegroundColor),
-                defaultValue: Colors.White);
+        public static readonly StyledProperty<IBrush> ForegroundProperty =
+            AvaloniaProperty.Register<TerminalView, IBrush>(
+                nameof(Foreground),
+                defaultValue: Brushes.White);
 
-        public static readonly StyledProperty<Color> BackgroundColorProperty =
-            AvaloniaProperty.Register<TerminalView, Color>(
-                nameof(BackgroundColor),
-                defaultValue: Colors.Transparent);
+        public static readonly StyledProperty<IBrush> BackgroundProperty =
+            AvaloniaProperty.Register<TerminalView, IBrush>(
+                nameof(Background),
+                defaultValue: Brushes.Black);
 
         public static readonly StyledProperty<IBrush> SelectionBrushProperty =
             AvaloniaProperty.Register<TerminalView, IBrush>(
@@ -104,6 +107,11 @@ namespace Iciclecreek.Terminal
                 nameof(Args),
                 defaultValue: Array.Empty<string>());
 
+        public static readonly StyledProperty<Color> CursorColorProperty =
+            AvaloniaProperty.Register<TerminalView, Color>(
+                nameof(CursorColor),
+                defaultValue: Colors.White);
+
 
         static TerminalView()
         {
@@ -113,11 +121,12 @@ namespace Iciclecreek.Terminal
                 FontStyleProperty,
                 FontWeightProperty,
                 TextDecorationsProperty,
-                ForegroundColorProperty,
-                BackgroundColorProperty,
+                ForegroundProperty,
+                BackgroundProperty,
                 SelectionBrushProperty,
                 BufferSizeProperty,
-                ViewportYProperty);
+                ViewportYProperty,
+                CursorColorProperty);
 
             AffectsMeasure<TerminalView>(
                 FontFamilyProperty,
@@ -145,6 +154,13 @@ namespace Iciclecreek.Terminal
 
             // Subscribe to terminal data event - this is fired when terminal wants to send data (user input)
             _terminal.DataReceived += OnTerminalDataReceived;
+
+            // Setup cursor blink timer
+            _cursorBlinkTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(_terminal.Options.CursorBlinkRate > 0 ? _terminal.Options.CursorBlinkRate : 530)
+            };
+            _cursorBlinkTimer.Tick += OnCursorBlinkTick;
         }
 
         public int BufferSize
@@ -170,7 +186,6 @@ namespace Iciclecreek.Terminal
                 var oldValue = _terminal.Buffer.ViewportY;
                 _terminal.Buffer.ViewportY = value;
                 
-                Debug.WriteLine($"ViewportY set to {_terminal.Buffer.ViewportY}");
                 if (oldValue != _terminal.Buffer.ViewportY)
                 {
                     RaisePropertyChanged(ViewportYProperty, oldValue, _terminal.Buffer.ViewportY);
@@ -191,7 +206,6 @@ namespace Iciclecreek.Terminal
                 var totalLines = _terminal.Buffer.Length;
                 var viewportLines = _terminal.Rows;
                 var max = Math.Max(0, totalLines - viewportLines);
-                Debug.WriteLine($"MaxScrollback: totalLines={totalLines}, viewportLines={viewportLines}, max={max}");
                 return max;
             }
         }
@@ -228,16 +242,16 @@ namespace Iciclecreek.Terminal
             set => SetValue(TextDecorationsProperty, value);
         }
 
-        public Color ForegroundColor
+        public IBrush Foreground
         {
-            get => GetValue(ForegroundColorProperty);
-            set => SetValue(ForegroundColorProperty, value);
+            get => GetValue(ForegroundProperty);
+            set => SetValue(ForegroundProperty, value);
         }
 
-        public Color BackgroundColor
+        public IBrush Background
         {
-            get => GetValue(BackgroundColorProperty);
-            set => SetValue(BackgroundColorProperty, value);
+            get => GetValue(BackgroundProperty);
+            set => SetValue(BackgroundProperty, value);
         }
 
         public IBrush SelectionBrush
@@ -258,18 +272,40 @@ namespace Iciclecreek.Terminal
             set => SetValue(ArgsProperty, value);
         }
 
+        public Color CursorColor
+        {
+            get => GetValue(CursorColorProperty);
+            set => SetValue(CursorColorProperty, value);
+        }
+
         private void OnLoaded(object sender, RoutedEventArgs e)
         {
             if (!string.IsNullOrEmpty(Process))
             {
                 LaunchProcess();
             }
+
+            // Start cursor blinking if enabled
+            if (_terminal.Options.CursorBlink)
+            {
+                _cursorBlinkTimer.Start();
+            }
         }
 
         private void OnUnloaded(object sender, RoutedEventArgs e)
         {
+            _cursorBlinkTimer.Stop();
             _terminal.DataReceived -= OnTerminalDataReceived;
             CleanupProcess();
+        }
+
+        private void OnCursorBlinkTick(object? sender, EventArgs e)
+        {
+            if (_terminal.Options.CursorBlink && IsFocused)
+            {
+                _cursorVisible = !_cursorVisible;
+                InvalidateVisual();
+            }
         }
 
         protected override void OnKeyDown(KeyEventArgs e)
@@ -291,20 +327,16 @@ namespace Iciclecreek.Terminal
                 if (!string.IsNullOrEmpty(e.KeySymbol) && e.KeySymbol.Length == 1 &&
                     !char.IsControl(e.KeySymbol[0]) && xtermKey == null)
                 {
-                    Debug.WriteLine($"OnKeyDown({e.Key} {e.KeySymbol[0]}, {modifiers})");
                     // Regular character input
                     sequence = _terminal.GenerateCharInput(e.KeySymbol[0], modifiers);
-                    Debug.WriteLine($"Key Sequence:{sequence}");
                 }
                 else if (xtermKey != null)
                 {
-                    Debug.WriteLine($"OnKeyDown({xtermKey.Value} {modifiers})");
                     // Special key (arrows, function keys, etc.)
                     sequence = _terminal.GenerateKeyInput(xtermKey.Value, modifiers);
                 }
                 else
                 {
-                    Debug.WriteLine("Unknown key");
                     return; // Unknown key
                 }
 
@@ -329,7 +361,6 @@ namespace Iciclecreek.Terminal
 
             try
             {
-                Debug.WriteLine($"OnTextInput({e.Text})");
                 // For text input, send it directly (handles composition, IME, etc.)
                 SendToPty(e.Text);
                 e.Handled = true;
@@ -403,6 +434,13 @@ namespace Iciclecreek.Terminal
         {
             base.OnGotFocus(e);
 
+            // Reset cursor visibility when focused
+            _cursorVisible = true;
+            if (_terminal.Options.CursorBlink)
+            {
+                _cursorBlinkTimer.Start();
+            }
+
             if (_ptyConnection != null && _terminal.SendFocusEvents)
             {
                 var sequence = _terminal.GenerateFocusEvent(true);
@@ -418,6 +456,10 @@ namespace Iciclecreek.Terminal
         protected override void OnLostFocus(RoutedEventArgs e)
         {
             base.OnLostFocus(e);
+
+            // Stop blinking when not focused, but keep cursor visible
+            _cursorBlinkTimer.Stop();
+            _cursorVisible = true;
 
             if (_ptyConnection != null && _terminal.SendFocusEvents)
             {
@@ -572,8 +614,8 @@ namespace Iciclecreek.Terminal
                         await Dispatcher.UIThread.InvokeAsync(() =>
                         {
                             _terminal.WriteLine($"\nProcess exited with code: {_ptyConnection?.ExitCode ?? 0}\n");
-                            // Auto-scroll to bottom
-                            _terminal.Buffer.ScrollToBottom();
+                            //// Auto-scroll to bottom
+                            //_terminal.Buffer.ScrollToBottom();
                         });
                         break;
                     }
@@ -665,6 +707,7 @@ namespace Iciclecreek.Terminal
                 // Only resize if dimensions have changed
                 if (newCols != _terminal.Cols || newRows != _terminal.Rows)
                 {
+                    Debug.WriteLine($"Resizing to [{newCols}, {newRows}]");
                     _terminal.Resize(newCols, newRows);
 
                     // Also resize the PTY connection if it exists
@@ -688,7 +731,6 @@ namespace Iciclecreek.Terminal
             
             int startLine = viewportY;
             int endLine = Math.Min(_terminal.Buffer.Length, startLine + viewportLines);
-            Debug.WriteLine($"Render: ViewportY={viewportY}, startLine={startLine}, endLine={endLine} Rows={endLine-startLine} {viewportLines}");
             for (int y = startLine; y < endLine; y++)
             {
                 var line = _terminal.Buffer.GetLine(y);
@@ -709,23 +751,106 @@ namespace Iciclecreek.Terminal
                     double posY = (y - startLine) * _charHeight;
 
                     // draw rectangle for line
-                    var bgBrush = new SolidColorBrush(cell.GetBackground() ?? this.BackgroundColor);
-                    context.FillRectangle(bgBrush, new Rect(posX, posY, text.Length * _charWidth, _charHeight));
+                    context.FillRectangle(cell.GetBackgroundBrush(this.Background), new Rect(posX, posY, text.Length * _charWidth, _charHeight));
 
                     // draw text
                     var typeface = new Typeface(FontFamily, cell.GetFontStyle(), cell.GetFontWeight());
-                    var fgBrush = new SolidColorBrush(cell.GetForegroundColor() ?? this.ForegroundColor);
                     var formattedText = new FormattedText(
                         text,
                         CultureInfo.CurrentCulture,
                         FlowDirection.LeftToRight,
                         typeface,
                         FontSize,
-                        fgBrush);
+                        cell.GetForegroundBrush(this.Foreground));
                     context.DrawText(formattedText, new Point(posX, posY));
                     x += text.Length;
                     Debug.Assert(text.Length > 0);
                 }
+            }
+
+            // Render the cursor
+            RenderCursor(context, viewportY);
+        }
+
+        private void RenderCursor(DrawingContext context, int viewportY)
+        {
+            // Only show cursor if terminal says it's visible and we're at the bottom (or cursor is in view)
+            if (!_terminal.CursorVisible)
+                return;
+
+            // Only show cursor if blink state is visible (or not blinking)
+            if (!_cursorVisible)
+                return;
+
+            // Get cursor position relative to viewport
+            int cursorX = _terminal.Buffer.X;
+            int cursorY = _terminal.Buffer.Y;
+
+            // The cursor Y is relative to the active screen area, need to check if it's visible
+            // when scrolled. Cursor is at absolute position: Buffer.YBase + Buffer.Y
+            int absoluteCursorY = _terminal.Buffer.YBase + cursorY;
+            
+            // Check if cursor is visible in current viewport
+            if (absoluteCursorY < viewportY || absoluteCursorY >= viewportY + _terminal.Rows)
+                return;
+
+            // Calculate screen position
+            int screenY = absoluteCursorY - viewportY;
+            double posX = cursorX * _charWidth;
+            double posY = screenY * _charHeight;
+
+            var cursorBrush = new SolidColorBrush(CursorColor);
+
+            // Render based on cursor style
+            switch (_terminal.Options.CursorStyle)
+            {
+                case XT.Common.CursorStyle.Block:
+                    if (IsFocused)
+                    {
+                        // Filled block when focused
+                        context.FillRectangle(cursorBrush, new Rect(posX, posY, _charWidth, _charHeight));
+
+                        // Draw the character under cursor with inverted colors
+                        var line = _terminal.Buffer.GetLine(absoluteCursorY);
+                        if (line != null && cursorX < line.Length)
+                        {
+                            var cell = line[cursorX];
+                            var charContent = cell.Content ?? " ";
+                            var typeface = new Typeface(FontFamily, FontStyle, FontWeight);
+                            var invertedBrush = cell.GetBackgroundBrush(this.Background);
+                            var formattedText = new FormattedText(
+                                charContent,
+                                CultureInfo.CurrentCulture,
+                                FlowDirection.LeftToRight,
+                                typeface,
+                                FontSize,
+                                invertedBrush);
+                            context.DrawText(formattedText, new Point(posX, posY));
+                        }
+                    }
+                    else
+                    {
+                        // Outline block when not focused
+                        var pen = new Pen(cursorBrush, 1);
+                        context.DrawRectangle(pen, new Rect(posX, posY, _charWidth, _charHeight));
+                    }
+                    break;
+
+                case XT.Common.CursorStyle.Underline:
+                    {
+                        // Draw underline cursor (2 pixels high at bottom of cell)
+                        var underlineHeight = 2.0;
+                        context.FillRectangle(cursorBrush, new Rect(posX, posY + _charHeight - underlineHeight, _charWidth, underlineHeight));
+                    }
+                    break;
+
+                case XT.Common.CursorStyle.Bar:
+                    {
+                        // Draw bar cursor (2 pixels wide at left of cell)
+                        var barWidth = 2.0;
+                        context.FillRectangle(cursorBrush, new Rect(posX, posY, barWidth, _charHeight));
+                    }
+                    break;
             }
         }
     }

@@ -13,6 +13,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "XTerm.NET", "..\..\XTerm.NE
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Pty.Net", "..\..\Quick.PtyNet\src\Quick.PtyNet\Pty.Net.csproj", "{A11375B9-F177-9355-AEA4-A90DAD251F41}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "XTerm.NET.Tests", "..\..\XTerm.NET\src\XTerm.NET.Tests\XTerm.NET.Tests.csproj", "{49B9D9F6-AB7D-6EE3-DAFA-DC28D968D1D4}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -39,6 +41,10 @@ Global
 		{A11375B9-F177-9355-AEA4-A90DAD251F41}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A11375B9-F177-9355-AEA4-A90DAD251F41}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A11375B9-F177-9355-AEA4-A90DAD251F41}.Release|Any CPU.Build.0 = Release|Any CPU
+		{49B9D9F6-AB7D-6EE3-DAFA-DC28D968D1D4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{49B9D9F6-AB7D-6EE3-DAFA-DC28D968D1D4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{49B9D9F6-AB7D-6EE3-DAFA-DC28D968D1D4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{49B9D9F6-AB7D-6EE3-DAFA-DC28D968D1D4}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -25,7 +25,7 @@ namespace Iciclecreek.Avalonia.Terminal
         /// Returns null if using default color or palette mode.
         /// </summary>
         /// <returns>A tuple (R, G, B) with RGB values 0-255, or null if not using RGB mode.</returns>
-        public static Color? GetBackground(this BufferCell cell)
+        public static Color? GetBackgroundColor(this BufferCell cell)
         {
             var color = cell.Attributes.GetBgColor();
             var mode = cell.Attributes.GetBgColorMode();
@@ -33,6 +33,14 @@ namespace Iciclecreek.Avalonia.Terminal
             if (color == 257) return null;  // Default color
 
             return ExtractColor(color, mode);
+        }
+
+        public static IBrush GetBackgroundBrush(this BufferCell cell, IBrush defaultBrush)
+        {
+            var bgColor = cell.GetBackgroundColor();
+            if (bgColor.HasValue)
+                return new SolidColorBrush(bgColor.Value);
+            return defaultBrush;
         }
 
         /// <summary>
@@ -50,6 +58,13 @@ namespace Iciclecreek.Avalonia.Terminal
             return ExtractColor(color, mode);
         }
 
+        public static IBrush GetForegroundBrush(this BufferCell cell, IBrush defaultBrush)
+        {
+            var fgColor = cell.GetForegroundColor();
+            if (fgColor.HasValue)
+                return new SolidColorBrush(fgColor.Value);
+            return defaultBrush;
+        }
         private static Color? ExtractColor(int color, int mode)
         {
             if (mode == 1)  // RGB mode

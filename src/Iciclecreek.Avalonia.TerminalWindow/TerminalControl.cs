@@ -18,16 +18,6 @@ namespace Iciclecreek.Terminal
                 nameof(TextDecorations),
                 defaultValue: null);
 
-        public static readonly StyledProperty<Color> ForegroundColorProperty =
-            AvaloniaProperty.Register<TerminalControl, Color>(
-                nameof(ForegroundColor),
-                defaultValue: Colors.White);
-
-        public static readonly StyledProperty<Color> BackgroundColorProperty =
-            AvaloniaProperty.Register<TerminalControl, Color>(
-                nameof(BackgroundColor),
-                defaultValue: Colors.Transparent);
-
         public static readonly StyledProperty<IBrush> SelectionBrushProperty =
             AvaloniaProperty.Register<TerminalControl, IBrush>(
                 nameof(SelectionBrush),
@@ -52,18 +42,6 @@ namespace Iciclecreek.Terminal
         {
             get => GetValue(TextDecorationsProperty);
             set => SetValue(TextDecorationsProperty, value);
-        }
-
-        public Color ForegroundColor
-        {
-            get => GetValue(ForegroundColorProperty);
-            set => SetValue(ForegroundColorProperty, value);
-        }
-
-        public Color BackgroundColor
-        {
-            get => GetValue(BackgroundColorProperty);
-            set => SetValue(BackgroundColorProperty, value);
         }
 
         public IBrush SelectionBrush
