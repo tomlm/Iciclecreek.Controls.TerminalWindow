@@ -22,12 +22,11 @@ namespace Iciclecreek.Terminal
 {
     public class TerminalView : Control
     {
-        private XT.Terminal _terminal = new XT.Terminal(null);
+        private XT.Terminal _terminal;
         private FormattedText _measureText;
         private double _charWidth;
         private double _charHeight;
         private int _bufferSize = 1000;
-        private int _scrollOffset = 0;
 
         // Process management
         private IPtyConnection _ptyConnection;
@@ -39,16 +38,16 @@ namespace Iciclecreek.Terminal
                 o => o._bufferSize,
                 (o, v) => o._bufferSize = v);
 
-        public static readonly DirectProperty<TerminalView, int> ScrollOffsetProperty =
+        public static readonly DirectProperty<TerminalView, int> ViewportYProperty =
             AvaloniaProperty.RegisterDirect<TerminalView, int>(
-                nameof(ScrollOffset),
-                o => o._scrollOffset,
-                (o, v) => o.ScrollOffset = v);
+                nameof(ViewportY),
+                o => o.ViewportY,
+                (o, v) => o.ViewportY = v);
 
-        public static readonly DirectProperty<TerminalView, int> TotalLinesProperty =
+        public static readonly DirectProperty<TerminalView, int> MaxScrollbackProperty =
             AvaloniaProperty.RegisterDirect<TerminalView, int>(
-                nameof(TotalLines),
-                o => o.TotalLines);
+                nameof(MaxScrollback),
+                o => o.MaxScrollback);
 
         public static readonly DirectProperty<TerminalView, int> ViewportLinesProperty =
             AvaloniaProperty.RegisterDirect<TerminalView, int>(
@@ -118,7 +117,7 @@ namespace Iciclecreek.Terminal
                 BackgroundColorProperty,
                 SelectionBrushProperty,
                 BufferSizeProperty,
-                ScrollOffsetProperty);
+                ViewportYProperty);
 
             AffectsMeasure<TerminalView>(
                 FontFamilyProperty,
@@ -135,10 +134,15 @@ namespace Iciclecreek.Terminal
             Focusable = true;
             Loaded += OnLoaded;
             Unloaded += OnUnloaded;
-            
+
             // Set initial scrollback
-            _terminal.Options.Scrollback = _bufferSize;
-            
+            _terminal = new XT.Terminal(new XT.Options.TerminalOptions()
+            {
+                Cols = 80,
+                Rows = 24,
+                Scrollback = BufferSize,
+            });
+
             // Subscribe to terminal data event - this is fired when terminal wants to send data (user input)
             _terminal.DataReceived += OnTerminalDataReceived;
         }
@@ -154,22 +158,43 @@ namespace Iciclecreek.Terminal
             }
         }
 
-        public int ScrollOffset
+        /// <summary>
+        /// The absolute line index of the top of the viewport in the buffer.
+        /// 0 = top of buffer, higher values = scrolled forward towards current output.
+        /// </summary>
+        public int ViewportY
         {
-            get => _scrollOffset;
+            get => _terminal.Buffer.ViewportY;
             set
             {
-                var oldValue = _scrollOffset;
-                _scrollOffset = Math.Max(0, Math.Min(value, Math.Max(0, TotalLines - ViewportLines)));
-                if (oldValue != _scrollOffset)
+                var oldValue = _terminal.Buffer.ViewportY;
+                _terminal.Buffer.ViewportY = value;
+                
+                Debug.WriteLine($"ViewportY set to {_terminal.Buffer.ViewportY}");
+                if (oldValue != _terminal.Buffer.ViewportY)
                 {
-                    RaisePropertyChanged(ScrollOffsetProperty, oldValue, _scrollOffset);
+                    RaisePropertyChanged(ViewportYProperty, oldValue, _terminal.Buffer.ViewportY);
                     InvalidateVisual();
                 }
             }
         }
 
-        public int TotalLines => _terminal.Buffer.ScrollBottom;
+        /// <summary>
+        /// Maximum scroll position (total buffer lines - viewport lines).
+        /// This is the maximum value ViewportY can be.
+        /// </summary>
+        public int MaxScrollback
+        {
+            get
+            {
+                // Simple: total lines in buffer minus how many we can see
+                var totalLines = _terminal.Buffer.Length;
+                var viewportLines = _terminal.Rows;
+                var max = Math.Max(0, totalLines - viewportLines);
+                Debug.WriteLine($"MaxScrollback: totalLines={totalLines}, viewportLines={viewportLines}, max={max}");
+                return max;
+            }
+        }
 
         public int ViewportLines => _terminal.Rows;
 
@@ -261,21 +286,25 @@ namespace Iciclecreek.Terminal
                 var modifiers = ConvertAvaloniaModifiers(e.KeyModifiers);
 
                 string sequence;
-                
+
                 // Handle printable characters
-                if (!string.IsNullOrEmpty(e.KeySymbol) && e.KeySymbol.Length == 1 && 
+                if (!string.IsNullOrEmpty(e.KeySymbol) && e.KeySymbol.Length == 1 &&
                     !char.IsControl(e.KeySymbol[0]) && xtermKey == null)
                 {
+                    Debug.WriteLine($"OnKeyDown({e.Key} {e.KeySymbol[0]}, {modifiers})");
                     // Regular character input
                     sequence = _terminal.GenerateCharInput(e.KeySymbol[0], modifiers);
+                    Debug.WriteLine($"Key Sequence:{sequence}");
                 }
                 else if (xtermKey != null)
                 {
+                    Debug.WriteLine($"OnKeyDown({xtermKey.Value} {modifiers})");
                     // Special key (arrows, function keys, etc.)
                     sequence = _terminal.GenerateKeyInput(xtermKey.Value, modifiers);
                 }
                 else
                 {
+                    Debug.WriteLine("Unknown key");
                     return; // Unknown key
                 }
 
@@ -300,6 +329,7 @@ namespace Iciclecreek.Terminal
 
             try
             {
+                Debug.WriteLine($"OnTextInput({e.Text})");
                 // For text input, send it directly (handles composition, IME, etc.)
                 SendToPty(e.Text);
                 e.Handled = true;
@@ -313,7 +343,7 @@ namespace Iciclecreek.Terminal
         protected override void OnPointerPressed(PointerPressedEventArgs e)
         {
             base.OnPointerPressed(e);
-            
+
             // Request focus when clicked
             Focus();
 
@@ -325,10 +355,10 @@ namespace Iciclecreek.Terminal
                 var point = e.GetPosition(this);
                 var col = (int)(point.X / _charWidth);
                 var row = (int)(point.Y / _charHeight);
-                
+
                 var button = ConvertPointerButton(e.GetCurrentPoint(this).Properties);
                 var modifiers = ConvertAvaloniaModifiers(e.KeyModifiers);
-                
+
                 var sequence = _terminal.GenerateMouseEvent(button, col, row, XT.Input.MouseEventType.Down, modifiers);
                 if (!string.IsNullOrEmpty(sequence))
                 {
@@ -353,10 +383,10 @@ namespace Iciclecreek.Terminal
                 var point = e.GetPosition(this);
                 var col = (int)(point.X / _charWidth);
                 var row = (int)(point.Y / _charHeight);
-                
+
                 var button = ConvertPointerButton(e.GetCurrentPoint(this).Properties);
                 var modifiers = ConvertAvaloniaModifiers(e.KeyModifiers);
-                
+
                 var sequence = _terminal.GenerateMouseEvent(button, col, row, XT.Input.MouseEventType.Up, modifiers);
                 if (!string.IsNullOrEmpty(sequence))
                 {
@@ -461,14 +491,14 @@ namespace Iciclecreek.Terminal
         private XT.Input.KeyModifiers ConvertAvaloniaModifiers(KeyModifiers modifiers)
         {
             var result = XT.Input.KeyModifiers.None;
-            
+
             if (modifiers.HasFlag(KeyModifiers.Shift))
                 result |= XT.Input.KeyModifiers.Shift;
             if (modifiers.HasFlag(KeyModifiers.Control))
                 result |= XT.Input.KeyModifiers.Control;
             if (modifiers.HasFlag(KeyModifiers.Alt))
                 result |= XT.Input.KeyModifiers.Alt;
-                
+
             return result;
         }
 
@@ -480,7 +510,7 @@ namespace Iciclecreek.Terminal
                 return XT.Input.MouseButton.Middle;
             if (props.IsRightButtonPressed)
                 return XT.Input.MouseButton.Right;
-                
+
             return XT.Input.MouseButton.None;
         }
 
@@ -542,6 +572,8 @@ namespace Iciclecreek.Terminal
                         await Dispatcher.UIThread.InvokeAsync(() =>
                         {
                             _terminal.WriteLine($"\nProcess exited with code: {_ptyConnection?.ExitCode ?? 0}\n");
+                            // Auto-scroll to bottom
+                            _terminal.Buffer.ScrollToBottom();
                         });
                         break;
                     }
@@ -550,8 +582,11 @@ namespace Iciclecreek.Terminal
                     await Dispatcher.UIThread.InvokeAsync(() =>
                     {
                         _terminal.Write(output);
-                        RaisePropertyChanged(TotalLinesProperty, default(int), TotalLines);
+                        // Auto-scroll to bottom when new content arrives
+                        _terminal.Buffer.ScrollToBottom();
+                        RaisePropertyChanged(MaxScrollbackProperty, default(int), MaxScrollback);
                         RaisePropertyChanged(ViewportLinesProperty, default(int), ViewportLines);
+                        RaisePropertyChanged(ViewportYProperty, default(int), ViewportY);
                         InvalidateVisual();
                     });
                 }
@@ -565,6 +600,8 @@ namespace Iciclecreek.Terminal
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
                     _terminal.WriteLine($"\nError reading from process: {ex.Message}\n");
+                    // Auto-scroll to bottom
+                    _terminal.Buffer.ScrollToBottom();
                 });
             }
         }
@@ -614,10 +651,7 @@ namespace Iciclecreek.Terminal
         {
             UpdateTextMetrics();
 
-            var desiredWidth = availableSize.Width;
-            var desiredHeight = _bufferSize * _charHeight;
-
-            return new Size(desiredWidth, desiredHeight);
+            return availableSize;
         }
 
         protected override Size ArrangeOverride(Size finalSize)
@@ -627,19 +661,19 @@ namespace Iciclecreek.Terminal
             {
                 int newCols = Math.Max(1, (int)(finalSize.Width / _charWidth));
                 int newRows = Math.Max(1, (int)(finalSize.Height / _charHeight));
-                
+
                 // Only resize if dimensions have changed
                 if (newCols != _terminal.Cols || newRows != _terminal.Rows)
                 {
                     _terminal.Resize(newCols, newRows);
-                    
+
                     // Also resize the PTY connection if it exists
                     _ptyConnection?.Resize(newCols, newRows);
-                    
+
                     RaisePropertyChanged(ViewportLinesProperty, default(int), ViewportLines);
                 }
             }
-            
+
             return finalSize;
         }
 
@@ -647,17 +681,24 @@ namespace Iciclecreek.Terminal
         public override void Render(DrawingContext context)
         {
             StringBuilder sb = new StringBuilder();
-            int startLine = _terminal.Buffer.ScrollTop + _scrollOffset;
-            int endLine = Math.Min(_terminal.Buffer.ScrollBottom, startLine + _terminal.Rows);
+
+            // Use the terminal buffer's ViewportY to determine what to render
+            int viewportY = _terminal.Buffer.ViewportY;
+            int viewportLines = _terminal.Rows;
             
+            int startLine = viewportY;
+            int endLine = Math.Min(_terminal.Buffer.Length, startLine + viewportLines);
+            Debug.WriteLine($"Render: ViewportY={viewportY}, startLine={startLine}, endLine={endLine} Rows={endLine-startLine} {viewportLines}");
             for (int y = startLine; y < endLine; y++)
             {
                 var line = _terminal.Buffer.GetLine(y);
                 if (line == null)
                     continue;
-                    
+
                 for (int x = 0; x < _terminal.Cols;)
                 {
+                    if (x >= line.Length) 
+                        break;
                     var cell = line[x];
 
                     var text = String.Join(String.Empty, line.Skip(x)
@@ -683,10 +724,9 @@ namespace Iciclecreek.Terminal
                         fgBrush);
                     context.DrawText(formattedText, new Point(posX, posY));
                     x += text.Length;
+                    Debug.Assert(text.Length > 0);
                 }
             }
         }
-
     }
-
 }

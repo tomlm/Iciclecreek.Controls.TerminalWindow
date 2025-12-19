@@ -122,14 +122,15 @@ namespace Iciclecreek.Terminal
         {
             if (_terminalView != null)
             {
-                _terminalView.ScrollOffset = (int)e.NewValue;
+                _terminalView.ViewportY = (int)e.NewValue;
             }
         }
 
         private void OnTerminalViewPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
         {
-            if (e.Property == TerminalView.TotalLinesProperty ||
-                e.Property == TerminalView.ViewportLinesProperty)
+            if (e.Property == TerminalView.MaxScrollbackProperty ||
+                e.Property == TerminalView.ViewportLinesProperty ||
+                e.Property == TerminalView.ViewportYProperty)
             {
                 UpdateScrollBar();
             }
@@ -140,15 +141,16 @@ namespace Iciclecreek.Terminal
             if (_scrollBar == null || _terminalView == null)
                 return;
 
-            var totalLines = _terminalView.TotalLines;
+            var maxScrollback = _terminalView.MaxScrollback;
             var viewportLines = _terminalView.ViewportLines;
-            var scrollableLines = Math.Max(0, totalLines - viewportLines);
+            var currentScroll = _terminalView.ViewportY;
 
+            // Scrollbar range: 0 (top of buffer) to maxScrollback (bottom/current output)
             _scrollBar.Minimum = 0;
-            _scrollBar.Maximum = scrollableLines;
+            _scrollBar.Maximum = maxScrollback;
             _scrollBar.ViewportSize = viewportLines;
-            _scrollBar.Value = _terminalView.ScrollOffset;
-            _scrollBar.IsVisible = scrollableLines > 0;
+            _scrollBar.Value = currentScroll;
+            _scrollBar.IsVisible = maxScrollback > 0;
         }
     }
 }
