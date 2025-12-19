@@ -178,6 +178,7 @@ namespace Iciclecreek.Terminal
 
             _terminal.DataReceived += OnTerminalDataReceived;
             _terminal.BufferChanged += OnTerminalBufferChanged;
+            _terminal.CursorStyleChanged += OnTerminalCursorStyleChanged;
 
             // Setup cursor blink timer
             _cursorBlinkTimer = new DispatcherTimer
@@ -377,6 +378,7 @@ namespace Iciclecreek.Terminal
             _cursorBlinkTimer.Stop();
             _terminal.DataReceived -= OnTerminalDataReceived;
             _terminal.BufferChanged -= OnTerminalBufferChanged;
+            _terminal.CursorStyleChanged -= OnTerminalCursorStyleChanged;
             CleanupProcess();
         }
 
@@ -604,6 +606,21 @@ namespace Iciclecreek.Terminal
             RaisePropertyChanged(MaxScrollbackProperty, default(int), MaxScrollback);
             RaisePropertyChanged(ViewportLinesProperty, default(int), ViewportLines);
             RaisePropertyChanged(ViewportYProperty, default(int), ViewportY);
+            InvalidateVisual();
+        }
+
+        private void OnTerminalCursorStyleChanged(object? sender, XT.Events.TerminalEvents.CursorStyleChangedEventArgs e)
+        {
+            if (!Equals(CursorStyle, e.Style))
+            {
+                SetValue(CursorStyleProperty, e.Style);
+            }
+
+            if (!Equals(CursorBlink, e.Blink))
+            {
+                SetValue(CursorBlinkProperty, e.Blink);
+            }
+
             InvalidateVisual();
         }
 
