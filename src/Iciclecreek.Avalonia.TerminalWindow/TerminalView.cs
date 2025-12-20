@@ -690,7 +690,6 @@ namespace Iciclecreek.Terminal
 
             try
             {
-                Debug.WriteLine(data);
                 var bytes = Utf8NoBom.GetBytes(data);
                 lock (_ptyWriteLock)
                 {
