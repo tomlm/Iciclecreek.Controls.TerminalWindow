@@ -29,15 +29,13 @@ namespace Iciclecreek.Terminal
         private bool _isAlternateBuffer;
 
         // Process management
-        private IPtyConnection _ptyConnection;
-        private CancellationTokenSource _processCts;
-        private readonly object _ptyWriteLock = new();
+        private IPtyConnection? _ptyConnection;
+        private CancellationTokenSource? _processCts;
         private static readonly Encoding Utf8NoBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
 
         // Cursor blinking
         private DispatcherTimer _cursorBlinkTimer;
-        private bool _cursorBlinkOn = true;  // Tracks blink state (on/off phase)
-        private bool _suppressNextTextInput;
+        private bool _cursorBlinkOn = true;
 
         public static readonly DirectProperty<TerminalView, bool> IsAlternateBufferProperty =
             AvaloniaProperty.RegisterDirect<TerminalView, bool>(
@@ -393,7 +391,7 @@ namespace Iciclecreek.Terminal
             }
         }
 
-        protected override void OnKeyDown(KeyEventArgs e)
+        protected override async void OnKeyDown(KeyEventArgs e)
         {
             base.OnKeyDown(e);
 
@@ -406,29 +404,32 @@ namespace Iciclecreek.Terminal
                 var xtermKey = ConvertAvaloniaKeyToXTermKey(e.Key);
                 var modifiers = ConvertAvaloniaModifiers(e.KeyModifiers);
 
-                string sequence;
-
-                // Handle printable characters (prefer KeySymbol but fall back to key mapping so Alt+<char> works)
-                if (TryGetPrintableChar(e, out var keyChar) && xtermKey == null)
+                // Special keys (arrows, function keys, etc.) - always handle in KeyDown
+                if (xtermKey != null)
                 {
-                    sequence = _terminal.GenerateCharInput(keyChar, modifiers);
-                }
-                else if (xtermKey != null)
-                {
-                    // Special key (arrows, function keys, etc.)
-                    sequence = _terminal.GenerateKeyInput(xtermKey.Value, modifiers);
-                }
-                else
-                {
-                    return; // Unknown key
+                    var sequence = _terminal.GenerateKeyInput(xtermKey.Value, modifiers);
+                    if (!string.IsNullOrEmpty(sequence))
+                    {
+                        await SendToPtyAsync(sequence);
+                        e.Handled = true;
+                    }
+                    return;
                 }
 
-                if (!string.IsNullOrEmpty(sequence))
+                // Ctrl/Alt + character combinations (these don't generate TextInput events)
+                if ((modifiers & (XT.Input.KeyModifiers.Control | XT.Input.KeyModifiers.Alt)) != 0)
                 {
-                    SendToPty(sequence);
-                    _suppressNextTextInput = true; // We already sent the modifier-aware sequence
-                    e.Handled = true;
+                    if (TryGetPrintableChar(e, out var keyChar))
+                    {
+                        var sequence = _terminal.GenerateCharInput(keyChar, modifiers);
+                        if (!string.IsNullOrEmpty(sequence))
+                        {
+                            await SendToPtyAsync(sequence);
+                            e.Handled = true;
+                        }
+                    }
                 }
+                // Regular characters without Ctrl/Alt: let TextInput handle them
             }
             catch (Exception ex)
             {
@@ -436,24 +437,16 @@ namespace Iciclecreek.Terminal
             }
         }
 
-        protected override void OnTextInput(TextInputEventArgs e)
+        protected override async void OnTextInput(TextInputEventArgs e)
         {
             base.OnTextInput(e);
 
             if (_ptyConnection == null || string.IsNullOrEmpty(e.Text))
                 return;
 
-            if (_suppressNextTextInput)
-            {
-                _suppressNextTextInput = false;
-                e.Handled = true;
-                return;
-            }
-            
             try
             {
-                // For text input, send it directly (handles composition, IME, etc.)
-                SendToPty(e.Text);
+                await SendToPtyAsync(e.Text);
                 e.Handled = true;
             }
             catch (Exception ex)
@@ -462,7 +455,7 @@ namespace Iciclecreek.Terminal
             }
         }
 
-        protected override void OnPointerPressed(PointerPressedEventArgs e)
+        protected override async void OnPointerPressed(PointerPressedEventArgs e)
         {
             base.OnPointerPressed(e);
 
@@ -484,7 +477,7 @@ namespace Iciclecreek.Terminal
                 var sequence = _terminal.GenerateMouseEvent(button, col, row, XT.Input.MouseEventType.Down, modifiers);
                 if (!string.IsNullOrEmpty(sequence))
                 {
-                    SendToPty(sequence);
+                    await SendToPtyAsync(sequence);
                 }
             }
             catch (Exception ex)
@@ -493,7 +486,7 @@ namespace Iciclecreek.Terminal
             }
         }
 
-        protected override void OnPointerReleased(PointerReleasedEventArgs e)
+        protected override async void OnPointerReleased(PointerReleasedEventArgs e)
         {
             base.OnPointerReleased(e);
 
@@ -512,7 +505,7 @@ namespace Iciclecreek.Terminal
                 var sequence = _terminal.GenerateMouseEvent(button, col, row, XT.Input.MouseEventType.Up, modifiers);
                 if (!string.IsNullOrEmpty(sequence))
                 {
-                    SendToPty(sequence);
+                    await SendToPtyAsync(sequence);
                 }
             }
             catch (Exception ex)
@@ -521,7 +514,7 @@ namespace Iciclecreek.Terminal
             }
         }
 
-        protected override void OnPointerMoved(PointerEventArgs e)
+        protected override async void OnPointerMoved(PointerEventArgs e)
         {
             base.OnPointerMoved(e);
 
@@ -544,7 +537,7 @@ namespace Iciclecreek.Terminal
                 var sequence = _terminal.GenerateMouseEvent(button, col, row, eventType, modifiers);
                 if (!string.IsNullOrEmpty(sequence))
                 {
-                    SendToPty(sequence);
+                    await SendToPtyAsync(sequence);
                 }
             }
             catch (Exception ex)
@@ -553,7 +546,7 @@ namespace Iciclecreek.Terminal
             }
         }
 
-        protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
+        protected override async void OnPointerWheelChanged(PointerWheelEventArgs e)
         {
             base.OnPointerWheelChanged(e);
 
@@ -576,7 +569,7 @@ namespace Iciclecreek.Terminal
                 var sequence = _terminal.GenerateMouseEvent(button, col, row, eventType, modifiers);
                 if (!string.IsNullOrEmpty(sequence))
                 {
-                    SendToPty(sequence);
+                    await SendToPtyAsync(sequence);
                     e.Handled = true;
                     return;
                 }
@@ -603,7 +596,7 @@ namespace Iciclecreek.Terminal
             }
         }
 
-        protected override void OnGotFocus(GotFocusEventArgs e)
+        protected override async void OnGotFocus(GotFocusEventArgs e)
         {
             base.OnGotFocus(e);
 
@@ -619,14 +612,14 @@ namespace Iciclecreek.Terminal
                 var sequence = _terminal.GenerateFocusEvent(true);
                 if (!string.IsNullOrEmpty(sequence))
                 {
-                    SendToPty(sequence);
+                    await SendToPtyAsync(sequence);
                 }
             }
 
             InvalidateVisual();
         }
 
-        protected override void OnLostFocus(RoutedEventArgs e)
+        protected override async void OnLostFocus(RoutedEventArgs e)
         {
             base.OnLostFocus(e);
 
@@ -639,7 +632,7 @@ namespace Iciclecreek.Terminal
                 var sequence = _terminal.GenerateFocusEvent(false);
                 if (!string.IsNullOrEmpty(sequence))
                 {
-                    SendToPty(sequence);
+                    await SendToPtyAsync(sequence);
                 }
             }
 
@@ -677,13 +670,13 @@ namespace Iciclecreek.Terminal
             InvalidateVisual();
         }
 
-        private void OnTerminalDataReceived(object? sender, XT.Events.TerminalEvents.DataEventArgs e)
+        private async void OnTerminalDataReceived(object? sender, XT.Events.TerminalEvents.DataEventArgs e)
         {
             // Terminal wants to send data (typically in response to device status queries, etc.)
-            SendToPty(e.Data);
+            await SendToPtyAsync(e.Data);
         }
 
-        private void SendToPty(string data)
+        private async Task SendToPtyAsync(string data)
         {
             if (_ptyConnection == null || string.IsNullOrEmpty(data))
                 return;
@@ -691,11 +684,8 @@ namespace Iciclecreek.Terminal
             try
             {
                 var bytes = Utf8NoBom.GetBytes(data);
-                lock (_ptyWriteLock)
-                {
-                    _ptyConnection.WriterStream.Write(bytes, 0, bytes.Length);
-                    _ptyConnection.WriterStream.Flush();
-                }
+                await _ptyConnection.WriterStream.WriteAsync(bytes, 0, bytes.Length);
+                await _ptyConnection.WriterStream.FlushAsync();
             }
             catch (Exception ex)
             {
@@ -873,13 +863,12 @@ namespace Iciclecreek.Terminal
                         await Dispatcher.UIThread.InvokeAsync(() =>
                         {
                             _terminal.WriteLine($"\nProcess exited with code: {_ptyConnection?.ExitCode ?? 0}\n");
-                            //// Auto-scroll to bottom
-                            //_terminal.Buffer.ScrollToBottom();
                         });
                         break;
                     }
 
                     var output = Encoding.UTF8.GetString(buffer, 0, bytesRead);
+                    
                     await Dispatcher.UIThread.InvokeAsync(() =>
                     {
                         _terminal.Write(output);
@@ -901,7 +890,6 @@ namespace Iciclecreek.Terminal
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
                     _terminal.WriteLine($"\nError reading from process: {ex.Message}\n");
-                    // Auto-scroll to bottom
                     _terminal.Buffer.ScrollToBottom();
                 });
             }
@@ -966,7 +954,6 @@ namespace Iciclecreek.Terminal
                 // Only resize if dimensions have changed
                 if (newCols != _terminal.Cols || newRows != _terminal.Rows)
                 {
-                    Debug.WriteLine($"Resizing to [{newCols}, {newRows}]");
                     _terminal.Resize(newCols, newRows);
 
                     // Also resize the PTY connection if it exists
