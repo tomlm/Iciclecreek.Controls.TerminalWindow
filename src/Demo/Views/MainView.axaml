@@ -14,5 +14,5 @@
 		<vm:MainViewModel />
 	</Design.DataContext>
 	<!--<t:TerminalControl x:Name="Term" FontFamily="Consolas" FontSize="14" />-->
-	<terminal:TerminalControl FontFamily="Cascadia Mono" FontSize="14" />
+	<terminal:TerminalControl FontFamily="Cascadia Mono" FontSize="24" />
 </UserControl>

@@ -15,6 +15,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using XTerm.Buffer;
 using XT = global::XTerm;
 
 namespace Iciclecreek.Terminal
@@ -991,11 +992,12 @@ namespace Iciclecreek.Terminal
 
                     string text = String.Empty;
                     int cellCount = 0;
-                    int runStartX =0;
+                    int runStartX = 0;
 
                     // Skip placeholder cells (width 0) that follow wide characters
                     if (cell.Width == 0)
                     {
+                        Debug.Assert(cell.Content == BufferCell.Empty.Content, "Placeholder cell should be null content");
                         x++;
                         continue;
                     }
@@ -1030,16 +1032,13 @@ namespace Iciclecreek.Terminal
                         x += cell.Width;  // Move past wide character and its placeholder
                     }
 
-                    if (string.IsNullOrEmpty(text))
-                        continue;
-
                     var startX = Snap(runStartX * _charWidth, scale);
                     var endX = Snap((runStartX + cellCount) * _charWidth, scale);
                     var startY = Snap((y - startLine) * _charHeight, scale);
                     var endY = Snap((y - startLine + 1) * _charHeight, scale);
                     var rect = new Rect(startX, startY, Math.Max(0, endX - startX), Math.Max(0, endY - startY));
 
-                    // draw rectangle for line segment
+                    // draw rectangle for background of textrun
                     context.FillRectangle(cell.GetBackgroundBrush(this.Background), rect);
 
                     // draw text
@@ -1054,6 +1053,7 @@ namespace Iciclecreek.Terminal
                     var td = cell.GetTextDecorations();
                     if (td != null)
                         formattedText.SetTextDecorations(td);
+                    //Debug.WriteLine($"[{runStartX},{y - startLine}] '{text}' {text.Length}");
                     context.DrawText(formattedText, new Point(startX, startY));
                 }
             }
