@@ -407,6 +407,18 @@ namespace Iciclecreek.Terminal
 
             try
             {
+                // Check if Win32 Input Mode is enabled
+                if (_terminal.Win32InputMode)
+                {
+                    var sequence = GenerateWin32InputSequence(e, isKeyDown: true);
+                    if (!string.IsNullOrEmpty(sequence))
+                    {
+                        await SendToPtyAsync(sequence);
+                        e.Handled = true;
+                    }
+                    return;
+                }
+
                 // Convert Avalonia key to XTerm key
                 var xtermKey = ConvertAvaloniaKeyToXTermKey(e.Key);
                 var modifiers = ConvertAvaloniaModifiers(e.KeyModifiers);
@@ -444,11 +456,41 @@ namespace Iciclecreek.Terminal
             }
         }
 
+        protected override async void OnKeyUp(KeyEventArgs e)
+        {
+            base.OnKeyUp(e);
+
+            if (_ptyConnection == null)
+                return;
+
+            try
+            {
+                // Only send KeyUp events in Win32 Input Mode
+                if (_terminal.Win32InputMode)
+                {
+                    var sequence = GenerateWin32InputSequence(e, isKeyDown: false);
+                    if (!string.IsNullOrEmpty(sequence))
+                    {
+                        await SendToPtyAsync(sequence);
+                        e.Handled = true;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error handling key up: {ex.Message}");
+            }
+        }
+
         protected override async void OnTextInput(TextInputEventArgs e)
         {
             base.OnTextInput(e);
 
             if (_ptyConnection == null || string.IsNullOrEmpty(e.Text))
+                return;
+
+            // In Win32 Input Mode, text input is handled via KeyDown/KeyUp events
+            if (_terminal.Win32InputMode)
                 return;
 
             try
@@ -692,7 +734,11 @@ namespace Iciclecreek.Terminal
             {
                 var bytes = Utf8NoBom.GetBytes(data);
                 await _ptyConnection.WriterStream.WriteAsync(bytes, 0, bytes.Length);
-                await _ptyConnection.WriterStream.FlushAsync();
+                // write could fail which causes _ptyConnection to go away.
+                if (_ptyConnection != null)
+                {
+                    await _ptyConnection.WriterStream.FlushAsync();
+                }
             }
             catch (Exception ex)
             {
@@ -1192,6 +1238,214 @@ namespace Iciclecreek.Terminal
         {
             return Math.Round(value * scale, MidpointRounding.AwayFromZero) / scale;
         }
+
+        #region Win32 Input Mode Support
+
+        /// <summary>
+        /// Generates a Win32 INPUT_RECORD format escape sequence.
+        /// Format: ESC [ Vk ; Sc ; Uc ; Kd ; Cs ; Rc _
+        /// </summary>
+        private string GenerateWin32InputSequence(KeyEventArgs e, bool isKeyDown)
+        {
+            var vk = ConvertAvaloniaKeyToVirtualKey(e.Key);
+            if (vk == 0 && string.IsNullOrEmpty(e.KeySymbol))
+                return string.Empty;
+
+            // Get scan code (we use 0 as we don't have direct access to hardware scan codes)
+            var scanCode = 0;
+
+            // Get unicode character
+            int unicodeChar = 0;
+            if (!string.IsNullOrEmpty(e.KeySymbol) && e.KeySymbol.Length >= 1)
+            {
+                unicodeChar = char.ConvertToUtf32(e.KeySymbol, 0);
+            }
+
+            // Build control key state flags
+            var controlKeyState = GetWin32ControlKeyState(e.KeyModifiers);
+
+            // Repeat count (always 1 for our purposes)
+            var repeatCount = 1;
+
+            // Format: ESC [ Vk ; Sc ; Uc ; Kd ; Cs ; Rc _
+            return $"\u001b[{vk};{scanCode};{unicodeChar};{(isKeyDown ? 1 : 0)};{controlKeyState};{repeatCount}_";
+        }
+
+        /// <summary>
+        /// Converts Avalonia KeyModifiers to Win32 control key state flags.
+        /// </summary>
+        private static int GetWin32ControlKeyState(KeyModifiers modifiers)
+        {
+            // Win32 control key state flags
+            const int CAPSLOCK_ON = 0x0080;
+            const int ENHANCED_KEY = 0x0100;
+            const int LEFT_ALT_PRESSED = 0x0002;
+            const int LEFT_CTRL_PRESSED = 0x0008;
+            const int NUMLOCK_ON = 0x0020;
+            const int RIGHT_ALT_PRESSED = 0x0001;
+            const int RIGHT_CTRL_PRESSED = 0x0004;
+            const int SCROLLLOCK_ON = 0x0040;
+            const int SHIFT_PRESSED = 0x0010;
+
+            int state = 0;
+
+            if (modifiers.HasFlag(KeyModifiers.Shift))
+                state |= SHIFT_PRESSED;
+
+            if (modifiers.HasFlag(KeyModifiers.Control))
+                state |= LEFT_CTRL_PRESSED;
+
+            if (modifiers.HasFlag(KeyModifiers.Alt))
+                state |= LEFT_ALT_PRESSED;
+
+            return state;
+        }
+
+        /// <summary>
+        /// Converts Avalonia Key to Windows Virtual Key code.
+        /// </summary>
+        private static int ConvertAvaloniaKeyToVirtualKey(Key key)
+        {
+            return key switch
+            {
+                // Letters
+                Key.A => 0x41,
+                Key.B => 0x42,
+                Key.C => 0x43,
+                Key.D => 0x44,
+                Key.E => 0x45,
+                Key.F => 0x46,
+                Key.G => 0x47,
+                Key.H => 0x48,
+                Key.I => 0x49,
+                Key.J => 0x4A,
+                Key.K => 0x4B,
+                Key.L => 0x4C,
+                Key.M => 0x4D,
+                Key.N => 0x4E,
+                Key.O => 0x4F,
+                Key.P => 0x50,
+                Key.Q => 0x51,
+                Key.R => 0x52,
+                Key.S => 0x53,
+                Key.T => 0x54,
+                Key.U => 0x55,
+                Key.V => 0x56,
+                Key.W => 0x57,
+                Key.X => 0x58,
+                Key.Y => 0x59,
+                Key.Z => 0x5A,
+
+                // Numbers
+                Key.D0 => 0x30,
+                Key.D1 => 0x31,
+                Key.D2 => 0x32,
+                Key.D3 => 0x33,
+                Key.D4 => 0x34,
+                Key.D5 => 0x35,
+                Key.D6 => 0x36,
+                Key.D7 => 0x37,
+                Key.D8 => 0x38,
+                Key.D9 => 0x39,
+
+                // Function keys
+                Key.F1 => 0x70,
+                Key.F2 => 0x71,
+                Key.F3 => 0x72,
+                Key.F4 => 0x73,
+                Key.F5 => 0x74,
+                Key.F6 => 0x75,
+                Key.F7 => 0x76,
+                Key.F8 => 0x77,
+                Key.F9 => 0x78,
+                Key.F10 => 0x79,
+                Key.F11 => 0x7A,
+                Key.F12 => 0x7B,
+                Key.F13 => 0x7C,
+                Key.F14 => 0x7D,
+                Key.F15 => 0x7E,
+                Key.F16 => 0x7F,
+                Key.F17 => 0x80,
+                Key.F18 => 0x81,
+                Key.F19 => 0x82,
+                Key.F20 => 0x83,
+                Key.F21 => 0x84,
+                Key.F22 => 0x85,
+                Key.F23 => 0x86,
+                Key.F24 => 0x87,
+
+                // Navigation keys
+                Key.Left => 0x25,
+                Key.Up => 0x26,
+                Key.Right => 0x27,
+                Key.Down => 0x28,
+                Key.Home => 0x24,
+                Key.End => 0x23,
+                Key.PageUp => 0x21,
+                Key.PageDown => 0x22,
+                Key.Insert => 0x2D,
+                Key.Delete => 0x2E,
+
+                // Control keys
+                Key.Back => 0x08,
+                Key.Tab => 0x09,
+                Key.Enter => 0x0D,
+                Key.Escape => 0x1B,
+                Key.Space => 0x20,
+                Key.Pause => 0x13,
+                Key.CapsLock => 0x14,
+                Key.NumLock => 0x90,
+                Key.Scroll => 0x91,
+                Key.PrintScreen => 0x2C,
+
+                // Modifier keys
+                Key.LeftShift => 0x10,
+                Key.RightShift => 0x10,
+                Key.LeftCtrl => 0x11,
+                Key.RightCtrl => 0x11,
+                Key.LeftAlt => 0x12,
+                Key.RightAlt => 0x12,
+                Key.LWin => 0x5B,
+                Key.RWin => 0x5C,
+
+                // Numpad
+                Key.NumPad0 => 0x60,
+                Key.NumPad1 => 0x61,
+                Key.NumPad2 => 0x62,
+                Key.NumPad3 => 0x63,
+                Key.NumPad4 => 0x64,
+                Key.NumPad5 => 0x65,
+                Key.NumPad6 => 0x66,
+                Key.NumPad7 => 0x67,
+                Key.NumPad8 => 0x68,
+                Key.NumPad9 => 0x69,
+                Key.Multiply => 0x6A,
+                Key.Add => 0x6B,
+                Key.Separator => 0x6C,
+                Key.Subtract => 0x6D,
+                Key.Decimal => 0x6E,
+                Key.Divide => 0x6F,
+
+                // OEM keys
+                Key.OemSemicolon => 0xBA,
+                Key.OemPlus => 0xBB,
+                Key.OemComma => 0xBC,
+                Key.OemMinus => 0xBD,
+                Key.OemPeriod => 0xBE,
+                Key.OemQuestion => 0xBF,
+                Key.OemTilde => 0xC0,
+                Key.OemOpenBrackets => 0xDB,
+                Key.OemPipe => 0xDC,
+                Key.OemCloseBrackets => 0xDD,
+                Key.OemQuotes => 0xDE,
+                Key.OemBackslash => 0xE2,
+
+                _ => 0
+            };
+        }
+
+        #endregion
+
     }
 
     /// <summary>
