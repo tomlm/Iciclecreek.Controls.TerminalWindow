@@ -20,6 +20,7 @@ using XT = global::XTerm;
 
 namespace Iciclecreek.Terminal
 {
+
     public class TerminalView : Control
     {
         private XT.Terminal _terminal;
@@ -1262,43 +1263,52 @@ namespace Iciclecreek.Terminal
             }
 
             // Build control key state flags
-            var controlKeyState = GetWin32ControlKeyState(e.KeyModifiers);
+            var controlKeyState = GetWin32ControlKeyState(e.KeyModifiers, e.Key);
 
             // Repeat count (always 1 for our purposes)
             var repeatCount = 1;
 
             // Format: ESC [ Vk ; Sc ; Uc ; Kd ; Cs ; Rc _
-            return $"\u001b[{vk};{scanCode};{unicodeChar};{(isKeyDown ? 1 : 0)};{controlKeyState};{repeatCount}_";
+            return $"\u001b[{vk};{scanCode};{unicodeChar};{(isKeyDown ? 1 : 0)};{(int)controlKeyState};{repeatCount}_";
         }
 
         /// <summary>
         /// Converts Avalonia KeyModifiers to Win32 control key state flags.
         /// </summary>
-        private static int GetWin32ControlKeyState(KeyModifiers modifiers)
+        private static Win32ControlKeyState GetWin32ControlKeyState(KeyModifiers modifiers, Key key)
         {
-            // Win32 control key state flags
-            const int CAPSLOCK_ON = 0x0080;
-            const int ENHANCED_KEY = 0x0100;
-            const int LEFT_ALT_PRESSED = 0x0002;
-            const int LEFT_CTRL_PRESSED = 0x0008;
-            const int NUMLOCK_ON = 0x0020;
-            const int RIGHT_ALT_PRESSED = 0x0001;
-            const int RIGHT_CTRL_PRESSED = 0x0004;
-            const int SCROLLLOCK_ON = 0x0040;
-            const int SHIFT_PRESSED = 0x0010;
-
-            int state = 0;
+            var state = Win32ControlKeyState.None;
 
             if (modifiers.HasFlag(KeyModifiers.Shift))
-                state |= SHIFT_PRESSED;
+                state |= Win32ControlKeyState.ShiftPressed;
 
             if (modifiers.HasFlag(KeyModifiers.Control))
-                state |= LEFT_CTRL_PRESSED;
+                state |= Win32ControlKeyState.LeftCtrlPressed;
 
             if (modifiers.HasFlag(KeyModifiers.Alt))
-                state |= LEFT_ALT_PRESSED;
+                state |= Win32ControlKeyState.LeftAltPressed;
+
+            // Mark enhanced keys (navigation keys, etc.)
+            if (IsEnhancedKey(key))
+                state |= Win32ControlKeyState.EnhancedKey;
 
             return state;
+        }
+
+        /// <summary>
+        /// Determines if a key is an "enhanced" key (extended keyboard keys).
+        /// </summary>
+        private static bool IsEnhancedKey(Key key)
+        {
+            return key switch
+            {
+                Key.Insert or Key.Delete or Key.Home or Key.End or
+                Key.PageUp or Key.PageDown or Key.Up or Key.Down or
+                Key.Left or Key.Right or Key.Divide or
+                Key.NumLock or Key.RightCtrl or Key.RightAlt or
+                Key.PrintScreen or Key.Pause => true,
+                _ => false
+            };
         }
 
         /// <summary>
