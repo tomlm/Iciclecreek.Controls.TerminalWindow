@@ -33,6 +33,7 @@ namespace Iciclecreek.Terminal
         private IPtyConnection? _ptyConnection;
         private CancellationTokenSource? _processCts;
         private static readonly Encoding Utf8NoBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+        private bool _processExitHandled;  // Prevent double notification
 
         // Cursor blinking
         private DispatcherTimer _cursorBlinkTimer;
@@ -134,6 +135,11 @@ namespace Iciclecreek.Terminal
             AvaloniaProperty.Register<TerminalView, int>(
                 nameof(CursorBlinkRate),
                 defaultValue: 530);
+
+        /// <summary>
+        /// Event raised when the PTY process exits.
+        /// </summary>
+        public event EventHandler<ProcessExitedEventArgs>? ProcessExited;
 
 
         static TerminalView()
@@ -813,6 +819,7 @@ namespace Iciclecreek.Terminal
             try
             {
                 _processCts = new CancellationTokenSource();
+                _processExitHandled = false;  // Reset flag for new process
 
                 // Determine the process to launch based on OS if not explicitly set
                 string processToLaunch = Process;
@@ -838,6 +845,9 @@ namespace Iciclecreek.Terminal
 
                 _ptyConnection = await PtyProvider.SpawnAsync(options, _processCts.Token);
 
+                // Subscribe to process exit event for reliable exit detection
+                _ptyConnection.ProcessExited += OnPtyProcessExited;
+
                 // Start reading from the PTY connection
                 _ = Task.Run(async () => await ReadPtyOutputAsync(_processCts.Token), _processCts.Token);
             }
@@ -860,11 +870,21 @@ namespace Iciclecreek.Terminal
                     var bytesRead = await _ptyConnection.ReaderStream.ReadAsync(buffer, 0, buffer.Length, cancellationToken);
                     if (bytesRead == 0)
                     {
-                        // Process has exited
-                        await Dispatcher.UIThread.InvokeAsync(() =>
+                        // Process has exited - the ProcessExited event handler will handle notification
+                        // This is just a fallback in case the event doesn't fire
+                        if (!_processExitHandled)
                         {
-                            _terminal.WriteLine($"\nProcess exited with code: {_ptyConnection?.ExitCode ?? 0}\n");
-                        });
+                            _processExitHandled = true;
+                            var exitCode = _ptyConnection?.ExitCode ?? 0;
+                            
+                            await Dispatcher.UIThread.InvokeAsync(() =>
+                            {
+                                _terminal.WriteLine($"\nProcess exited with code: {exitCode}\n");
+                                _terminal.Buffer.ScrollToBottom();
+                                InvalidateVisual();
+                                ProcessExited?.Invoke(this, new ProcessExitedEventArgs(exitCode));
+                            });
+                        }
                         break;
                     }
 
@@ -896,6 +916,25 @@ namespace Iciclecreek.Terminal
             }
         }
 
+        private void OnPtyProcessExited(object? sender, PtyExitedEventArgs e)
+        {
+            // Handle process exit from the PTY event (more reliable than just detecting EOF)
+            // Use flag to prevent double notification from both event and EOF detection
+            if (_processExitHandled)
+                return;
+            _processExitHandled = true;
+
+            Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                _terminal.WriteLine($"\nProcess exited with code: {e.ExitCode}\n");
+                _terminal.Buffer.ScrollToBottom();
+                InvalidateVisual();
+                
+                // Raise event on UI thread so subscribers can safely update UI
+                ProcessExited?.Invoke(this, new ProcessExitedEventArgs(e.ExitCode));
+            });
+        }
+
         private void CleanupProcess()
         {
             _processCts?.Cancel();
@@ -904,6 +943,8 @@ namespace Iciclecreek.Terminal
             {
                 try
                 {
+                    // Unsubscribe from event before cleanup
+                    _ptyConnection.ProcessExited -= OnPtyProcessExited;
                     _ptyConnection.Kill();
                     _ptyConnection.Dispose();
                 }
@@ -920,7 +961,6 @@ namespace Iciclecreek.Terminal
             _processCts?.Dispose();
             _processCts = null;
         }
-
 
         private void UpdateTextMetrics()
         {
@@ -1151,6 +1191,19 @@ namespace Iciclecreek.Terminal
         private static double Snap(double value, double scale)
         {
             return Math.Round(value * scale, MidpointRounding.AwayFromZero) / scale;
+        }
+    }
+
+    /// <summary>
+    /// EventArgs for the ProcessExited event.
+    /// </summary>
+    public class ProcessExitedEventArgs : EventArgs
+    {
+        public int ExitCode { get; }
+
+        public ProcessExitedEventArgs(int exitCode)
+        {
+            ExitCode = exitCode;
         }
     }
 }

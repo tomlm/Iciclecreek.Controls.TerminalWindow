@@ -13,6 +13,11 @@ namespace Iciclecreek.Terminal
         private TerminalView? _terminalView;
         private ScrollBar? _scrollBar;
 
+        /// <summary>
+        /// Event raised when the PTY process exits.
+        /// </summary>
+        public event EventHandler<ProcessExitedEventArgs>? ProcessExited;
+
         public static readonly StyledProperty<TextDecorationLocation?> TextDecorationsProperty =
             AvaloniaProperty.Register<TerminalControl, TextDecorationLocation?>(
                 nameof(TextDecorations),
@@ -81,6 +86,7 @@ namespace Iciclecreek.Terminal
             if (_terminalView != null)
             {
                 _terminalView.PropertyChanged -= OnTerminalViewPropertyChanged;
+                _terminalView.ProcessExited -= OnTerminalViewProcessExited;
             }
 
             // Get template parts
@@ -92,8 +98,15 @@ namespace Iciclecreek.Terminal
             {
                 _scrollBar.Scroll += OnScrollBarScroll;
                 _terminalView.PropertyChanged += OnTerminalViewPropertyChanged;
+                _terminalView.ProcessExited += OnTerminalViewProcessExited;
                 UpdateScrollBar();
             }
+        }
+
+        private void OnTerminalViewProcessExited(object? sender, ProcessExitedEventArgs e)
+        {
+            // Bubble up the event from TerminalView
+            ProcessExited?.Invoke(this, e);
         }
 
         private void OnScrollBarScroll(object? sender, ScrollEventArgs e)
