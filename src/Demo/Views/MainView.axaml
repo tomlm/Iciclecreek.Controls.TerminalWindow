@@ -13,9 +13,25 @@
 		to set the actual DataContext for runtime, set the DataContext property in code (look at App.axaml.cs) -->
 		<vm:MainViewModel />
 	</Design.DataContext>
-	<!--<t:TerminalControl x:Name="Term" FontFamily="Consolas" FontSize="14" />-->
-	<terminal:TerminalControl x:Name="Terminal" 
-						   FontFamily="Cascadia Mono" 
-						   FontSize="24" 
-						   ProcessExited="OnProcessExited"/>
+	<Grid RowDefinitions="Auto *">
+		<StackPanel Orientation="Horizontal" Background="DarkGray" Margin="4">
+			<TextBlock Text="Font Size:" Foreground="Black" VerticalAlignment="Center"/>
+			<TextBlock Text="{Binding #Terminal.FontSize}" Foreground="Black" VerticalAlignment="Center"/>
+			<Slider Grid.Row="0"
+					Margin="8,0,0,0"
+					Minimum="8"
+					Maximum="48"
+					TickFrequency="1"
+					IsSnapToTickEnabled="True"
+					Value="{Binding #Terminal.FontSize, Mode=TwoWay}"
+					HorizontalAlignment="Left"
+					Width="300"/>
+		</StackPanel>
+		<!--<t:TerminalControl x:Name="Term" FontFamily="Consolas" FontSize="14" />-->
+		<terminal:TerminalControl Grid.Row="1"
+								  x:Name="Terminal"
+								  FontFamily="Cascadia Mono"
+								  FontSize="24"
+								  ProcessExited="OnProcessExited"/>
+	</Grid>
 </UserControl>
