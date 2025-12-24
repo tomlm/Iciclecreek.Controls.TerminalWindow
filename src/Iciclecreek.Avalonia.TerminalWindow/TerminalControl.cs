@@ -1,8 +1,11 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
+using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Styling;
+using Avalonia.Threading;
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
@@ -136,6 +139,9 @@ namespace Iciclecreek.Terminal
         {
             // Automatically load the default theme styles
             LoadDefaultStyles();
+
+            // TerminalControl is focusable - it will delegate to inner TerminalView
+            FocusableProperty.OverrideDefaultValue<TerminalControl>(true);
         }
 
         private static void LoadDefaultStyles()
@@ -158,6 +164,18 @@ namespace Iciclecreek.Terminal
             var styles = (IStyle)new global::Avalonia.Markup.Xaml.Styling.StyleInclude(uri) { Source = uri };
             Application.Current.Styles.Add(styles);
             _stylesLoaded = true;
+        }
+
+        public TerminalControl()
+        {
+        }
+
+        protected override void OnGotFocus(GotFocusEventArgs e)
+        {
+            base.OnGotFocus(e);
+
+            // Defer until layout is ready, then focus the inner TerminalView
+            Dispatcher.UIThread.Post(() => _terminalView?.Focus(), DispatcherPriority.Input);
         }
 
         protected override void OnApplyTemplate(TemplateAppliedEventArgs e)

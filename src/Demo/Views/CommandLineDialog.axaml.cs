@@ -1,3 +1,4 @@
+using System;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 
@@ -10,7 +11,12 @@ public partial class CommandLineDialog : Window
     public CommandLineDialog()
     {
         InitializeComponent();
-        this.CommandLineTextBox.Focus();
+        Opened += OnOpened;
+    }
+
+    private void OnOpened(object? sender, EventArgs e)
+    {
+        CommandLineTextBox.Focus();
     }
 
     private void OnStartClicked(object? sender, RoutedEventArgs e)

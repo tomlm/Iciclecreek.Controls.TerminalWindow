@@ -1,8 +1,10 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
+using Avalonia.Threading;
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
@@ -171,6 +173,10 @@ namespace Iciclecreek.Terminal
             _terminalControl = new TerminalControl();
             Content = _terminalControl;
 
+            // Set focus to terminal when window opens or is activated
+            Opened += OnOpened;
+            Activated += OnActivated;
+
             // Wire up events
             _terminalControl.ProcessExited += OnTerminalControlProcessExited;
             _terminalControl.TitleChanged += OnTerminalControlTitleChanged;
@@ -199,9 +205,24 @@ namespace Iciclecreek.Terminal
             _terminalControl.Bind(TerminalControl.BufferSizeProperty, this.GetObservable(BufferSizeProperty));
         }
 
+        private void OnOpened(object? sender, EventArgs e)
+        {
+            // Defer focus until layout is ready
+            Dispatcher.UIThread.Post(() => _terminalControl?.Focus(), DispatcherPriority.Input);
+        }
+
+        private void OnActivated(object? sender, EventArgs e)
+        {
+            // Defer focus until layout is ready
+            Dispatcher.UIThread.Post(() => _terminalControl?.Focus(), DispatcherPriority.Input);
+        }
+
         protected override void OnUnloaded(RoutedEventArgs e)
         {
             base.OnUnloaded(e);
+
+            Opened -= OnOpened;
+            Activated -= OnActivated;
 
             if (_terminalControl != null)
             {

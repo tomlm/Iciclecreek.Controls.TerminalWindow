@@ -15,6 +15,7 @@ public partial class MainView : UserControl
     {
         base.OnLoaded(e);
         Terminal.ProcessExited += OnProcessExited;
+        Terminal.Focus();
     }
 
     private void OnProcessExited(object? sender, ProcessExitedEventArgs e)
