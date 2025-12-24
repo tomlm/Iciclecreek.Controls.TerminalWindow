@@ -1,0 +1,20 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="400" d:DesignHeight="150"
+        x:Class="Demo.Views.CommandLineDialog"
+        Title="Start Process"
+        Width="450"
+        Height="150"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False">
+	<Grid Margin="16" RowDefinitions="Auto,Auto,*,Auto">
+		<TextBlock Grid.Row="0" Text="Enter the command line to run:" Margin="0,0,0,8"/>
+		<TextBox Grid.Row="1" x:Name="CommandLineTextBox" Watermark="e.g., cmd.exe or /bin/bash"/>
+		<StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+			<Button Content="Start" Click="OnStartClicked" IsDefault="True" Width="80"/>
+			<Button Content="Cancel" Click="OnCancelClicked" IsCancel="True" Width="80"/>
+		</StackPanel>
+	</Grid>
+</Window>
