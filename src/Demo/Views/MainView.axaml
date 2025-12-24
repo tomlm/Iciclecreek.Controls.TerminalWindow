@@ -28,10 +28,15 @@
 					Width="300"/>
 		</StackPanel>
 		<!--<t:TerminalControl x:Name="Term" FontFamily="Consolas" FontSize="14" />-->
-		<terminal:TerminalControl Grid.Row="1"
-								  x:Name="Terminal"
-								  FontFamily="Cascadia Mono"
-								  FontSize="24"
-								  ProcessExited="OnProcessExited"/>
+		<Border Grid.Row="1"
+				Margin="32"
+				CornerRadius="8"
+				BoxShadow="0 0 8 16 Gray"
+				ClipToBounds="False">
+			<terminal:TerminalControl x:Name="Terminal"
+									  FontFamily="Cascadia Mono"
+									  FontSize="24"
+									  ProcessExited="OnProcessExited"/>
+		</Border>
 	</Grid>
 </UserControl>
