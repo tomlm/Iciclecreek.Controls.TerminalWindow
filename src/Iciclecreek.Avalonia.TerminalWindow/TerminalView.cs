@@ -510,8 +510,9 @@ namespace Iciclecreek.Terminal
                     var sequence = GenerateWin32InputSequence(e, isKeyDown: true);
                     if (!string.IsNullOrEmpty(sequence))
                     {
-                        await SendToPtyAsync(sequence);
+                        // Mark as handled BEFORE await to prevent Avalonia from processing
                         e.Handled = true;
+                        await SendToPtyAsync(sequence);
                     }
                     return;
                 }
@@ -519,14 +520,16 @@ namespace Iciclecreek.Terminal
                 // Convert Avalonia key to XTerm key
                 var xtermKey = ConvertAvaloniaKeyToXTermKey(e.Key);
 
-                // Special keys (arrows, function keys, etc.) - always handle in KeyDown
+                // Special keys (arrows, function keys, Tab, etc.) - always handle in KeyDown
                 if (xtermKey != null)
                 {
                     var sequence = _terminal.GenerateKeyInput(xtermKey.Value, modifiers);
                     if (!string.IsNullOrEmpty(sequence))
                     {
-                        await SendToPtyAsync(sequence);
+                        // Mark as handled BEFORE await to prevent Avalonia from processing
+                        // This is critical for Tab to prevent focus navigation
                         e.Handled = true;
+                        await SendToPtyAsync(sequence);
                     }
                     return;
                 }
@@ -539,8 +542,9 @@ namespace Iciclecreek.Terminal
                         var sequence = _terminal.GenerateCharInput(keyChar, modifiers);
                         if (!string.IsNullOrEmpty(sequence))
                         {
-                            await SendToPtyAsync(sequence);
+                            // Mark as handled BEFORE await
                             e.Handled = true;
+                            await SendToPtyAsync(sequence);
                         }
                     }
                     return;
@@ -921,22 +925,29 @@ namespace Iciclecreek.Terminal
             await SendToPtyAsync(e.Data);
         }
 
-        private async Task SendToPtyAsync(string data)
+        private readonly SemaphoreSlim _semaphore = new SemaphoreSlim(1, 1);
+
+        private async Task SendToPtyAsync(string data, CancellationToken ct = default)
         {
             // Capture the connection reference locally to avoid any potential race conditions
             var ptyConnection = _ptyConnection;
             if (ptyConnection == null || string.IsNullOrEmpty(data))
                 return;
 
+            await _semaphore.WaitAsync(ct);
             try
             {
-                var bytes = Utf8NoBom.GetBytes(data);
-                await ptyConnection.WriterStream.WriteAsync(bytes, 0, bytes.Length);
-                await ptyConnection.WriterStream.FlushAsync();
+                    var bytes = Utf8NoBom.GetBytes(data);
+                    await ptyConnection.WriterStream.WriteAsync(bytes, 0, bytes.Length, ct);
+                    await ptyConnection.WriterStream.FlushAsync(ct);
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"[{_instanceId}] Error writing to PTY: {ex.Message}");
+            }
+            finally
+            {
+                _semaphore.Release();
             }
         }
 
