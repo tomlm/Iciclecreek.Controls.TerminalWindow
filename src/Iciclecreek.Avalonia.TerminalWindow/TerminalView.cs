@@ -497,7 +497,7 @@ namespace Iciclecreek.Terminal
                 return;
             }
 
-            Debug.WriteLine($"[{_instanceId}] OnKeyDown: Key={e.Key}, KeyModifiers={e.KeyModifiers}, KeySymbol='{e.KeySymbol}'");
+           // Debug.WriteLine($"[{_instanceId}] OnKeyDown: Key={e.Key}, KeyModifiers={e.KeyModifiers}, KeySymbol='{e.KeySymbol}'");
 
             try
             {
@@ -774,7 +774,7 @@ namespace Iciclecreek.Terminal
         {
             base.OnGotFocus(e);
 
-            Debug.WriteLine($"[{_instanceId}] OnGotFocus");
+            //Debug.WriteLine($"[{_instanceId}] OnGotFocus");
 
             // Reset blink state to visible when focused
             _cursorBlinkOn = true;
@@ -799,7 +799,7 @@ namespace Iciclecreek.Terminal
         {
             base.OnLostFocus(e);
 
-            Debug.WriteLine($"[{_instanceId}] OnLostFocus");
+          //  Debug.WriteLine($"[{_instanceId}] OnLostFocus");
 
             // Stop blinking when not focused, but keep cursor visible (hollow block)
             _cursorBlinkTimer.Stop();
