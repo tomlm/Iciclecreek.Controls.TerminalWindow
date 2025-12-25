@@ -497,13 +497,13 @@ namespace Iciclecreek.Terminal
                 return;
             }
 
-            // Mark as handled early to prevent other controls from processing
-            e.Handled = true;
-
-            Debug.WriteLine($"[{_instanceId}] OnKeyDown: Key={e.Key}, IsFocused={IsFocused}");
+            Debug.WriteLine($"[{_instanceId}] OnKeyDown: Key={e.Key}, KeyModifiers={e.KeyModifiers}, KeySymbol='{e.KeySymbol}'");
 
             try
             {
+                var modifiers = ConvertAvaloniaModifiers(e.KeyModifiers);
+                var hasAlt = (modifiers & XT.Input.KeyModifiers.Alt) != 0;
+
                 // Check if Win32 Input Mode is enabled
                 if (_terminal.Win32InputMode)
                 {
@@ -511,13 +511,13 @@ namespace Iciclecreek.Terminal
                     if (!string.IsNullOrEmpty(sequence))
                     {
                         await SendToPtyAsync(sequence);
+                        e.Handled = true;
                     }
                     return;
                 }
 
                 // Convert Avalonia key to XTerm key
                 var xtermKey = ConvertAvaloniaKeyToXTermKey(e.Key);
-                var modifiers = ConvertAvaloniaModifiers(e.KeyModifiers);
 
                 // Special keys (arrows, function keys, etc.) - always handle in KeyDown
                 if (xtermKey != null)
@@ -526,6 +526,7 @@ namespace Iciclecreek.Terminal
                     if (!string.IsNullOrEmpty(sequence))
                     {
                         await SendToPtyAsync(sequence);
+                        e.Handled = true;
                     }
                     return;
                 }
@@ -539,10 +540,14 @@ namespace Iciclecreek.Terminal
                         if (!string.IsNullOrEmpty(sequence))
                         {
                             await SendToPtyAsync(sequence);
+                            e.Handled = true;
                         }
                     }
+                    return;
                 }
+
                 // Regular characters without Ctrl/Alt: let TextInput handle them
+                // Don't mark as handled so OnTextInput will be called
             }
             catch (Exception ex)
             {
