@@ -36,15 +36,9 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="11.3.9" />
-    <PackageReference Include="Porta.Pty" Version="1.0.3" />
+    <PackageReference Include="Porta.Pty" Version="1.0.4" />
     <PackageReference Include="Unicode.net" Version="2.0.0" />
     <PackageReference Include="Wcwidth" Version="4.0.1" />
-    <PackageReference Include="XTerm.NET" Version="1.0.2" />
+    <PackageReference Include="XTerm.NET" Version="1.0.5" />
   </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\..\..\Porta.Pty\src\Porta.Pty\Porta.Pty.csproj" />
-    <ProjectReference Include="..\..\..\Quick.PtyNet\src\Quick.PtyNet\Pty.Net.csproj" />
-    <ProjectReference Include="..\..\..\XTerm.NET\src\XTerm.NET\XTerm.NET.csproj" />
-  </ItemGroup>
-
 </Project>

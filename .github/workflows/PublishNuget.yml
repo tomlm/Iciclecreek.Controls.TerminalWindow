@@ -16,14 +16,14 @@ jobs:
           dotnet-version: 10.0.x
   
       - name: Restore dependencies
-        run: dotnet restore src/Iciclecreek.Avalonia.TerminalWindow.sln
+        run: dotnet restore src/Iciclecreek.Avalonia.TerminalWindow.slnx
 
       - name: Build
-        run: dotnet build src/Iciclecreek.Avalonia.TerminalWindow.sln -c Release --no-restore 
+        run: dotnet build src/Iciclecreek.Avalonia.TerminalWindow.slnx -c Release --no-restore 
   
       - name: dotnet pack 
         run: |
-          dotnet pack --no-build src/Iciclecreek.Avalonia.TerminalWindow.sln -c Release -o packages --include-symbols --property WarningLevel=0
+          dotnet pack --no-build src/Iciclecreek.Avalonia.TerminalWindow.slnx -c Release -o packages --include-symbols --property WarningLevel=0
 
       - name: Publish NuGet and symbols
         id: nuget-push
