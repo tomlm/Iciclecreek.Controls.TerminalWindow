@@ -3,7 +3,6 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
-using Avalonia.Media.TextFormatting;
 using Avalonia.Threading;
 using Iciclecreek.Avalonia.Terminal;
 using Porta.Pty;
@@ -479,6 +478,16 @@ namespace Iciclecreek.Terminal
             if (CursorBlink && IsFocused)
             {
                 _cursorBlinkOn = !_cursorBlinkOn;
+                for(int y=0; y < _terminal.Rows; y++)
+                {
+                    var line = _terminal.Buffer.GetLine(y);
+                    if (line.Any(cell => cell.Attributes.IsBlink()))
+                    {
+                        Debug.WriteLine($"{y} Isblink");
+                        line.Cache = null;
+                    }
+                }
+
                 InvalidateVisual();
             }
         }
@@ -1378,6 +1387,8 @@ namespace Iciclecreek.Terminal
                 var foreground = cell.GetForegroundBrush(this.Foreground);
                 if (cell.Attributes.IsInverse())
                     (foreground, background) = (background, foreground);
+                if (cell.Attributes.IsBlink() && this._cursorBlinkOn)
+                    (foreground, background) = (background, foreground);
 
                 var typeface = new Typeface(FontFamily, cell.GetFontStyle(), cell.GetFontWeight());
                 var formattedText = new FormattedText(text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, typeface, FontSize, foreground);
@@ -1479,7 +1490,8 @@ namespace Iciclecreek.Terminal
                         var rect = new Rect(startX, startYPos, Math.Max(0, endX - startX), rowHeight);
                         var background = cell.GetBackgroundBrush(this.Background);
                         var foreground = cell.GetForegroundBrush(this.Foreground);
-                        if (cell.Attributes.IsInverse())
+                        if (cell.Attributes.IsInverse() ||
+                            (cell.Attributes.IsBlink() && this.CursorBlink))
                             (foreground, background) = (background, foreground);
 
                         var typeface = new Typeface(FontFamily, cell.GetFontStyle(), cell.GetFontWeight());
