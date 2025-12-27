@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
+using Avalonia.Media.TextFormatting;
 using Avalonia.Threading;
 using Iciclecreek.Avalonia.Terminal;
 using Porta.Pty;
@@ -43,10 +44,7 @@ namespace Iciclecreek.Terminal
         // Unique identifier for this terminal instance (for debugging)
         private readonly Guid _instanceId = Guid.NewGuid();
 
-        // FormattedText cache - key is absolute line index
-        private readonly Dictionary<int, List<CachedTextRun>> _lineCache = new();
-
-        private sealed record CachedTextRun(FormattedText Text, Point Position, Rect BackgroundRect, IBrush Background);
+        private sealed record CachedTextRun(FormattedText Text, int StartX, int CellCount, IBrush Background);
 
         public static readonly DirectProperty<TerminalView, bool> IsAlternateBufferProperty =
             AvaloniaProperty.RegisterDirect<TerminalView, bool>(
@@ -621,8 +619,6 @@ namespace Iciclecreek.Terminal
             if (_terminal.Win32InputMode)
                 return;
 
-            Debug.WriteLine($"[{_instanceId}] OnTextInput: Text='{e.Text}', IsFocused={IsFocused}");
-
             try
             {
                 await SendToPtyAsync(e.Text);
@@ -831,9 +827,6 @@ namespace Iciclecreek.Terminal
             {
                 RaisePropertyChanged(IsAlternateBufferProperty, oldValue, _isAlternateBuffer);
             }
-
-            // Clear cache on buffer switch
-            _lineCache.Clear();
 
             RaisePropertyChanged(MaxScrollbackProperty, default(int), MaxScrollback);
             RaisePropertyChanged(ViewportLinesProperty, default(int), ViewportLines);
@@ -1154,7 +1147,6 @@ namespace Iciclecreek.Terminal
                         _terminal.Write(output);
                         // Auto-scroll to bottom when new content arrives
                         _terminal.Buffer.ScrollToBottom();
-                        _lineCache.Clear();
                         RaisePropertyChanged(MaxScrollbackProperty, default(int), MaxScrollback);
                         RaisePropertyChanged(ViewportLinesProperty, default(int), ViewportLines);
                         RaisePropertyChanged(ViewportYProperty, default(int), ViewportY);
@@ -1286,13 +1278,25 @@ namespace Iciclecreek.Terminal
 
                 int screenY = y - startLine;
 
+                // Calculate Y positions for this screen row
+                var startYPos = Snap(screenY * _charHeight, scale);
+                var endYPos = Snap((screenY + 1) * _charHeight, scale);
+                var rowHeight = Math.Max(0, endYPos - startYPos);
+
                 // Try to use cached text runs for this line
-                if (_lineCache.TryGetValue(y, out var cachedRuns))
+                var textRuns = line.Cache as List<CachedTextRun>;
+                if (textRuns != null)
                 {
-                    foreach (var run in cachedRuns)
+                    foreach (var run in textRuns)
                     {
-                        context.FillRectangle(run.Background, run.BackgroundRect);
-                        context.DrawText(run.Text, run.Position);
+                        // Recalculate position based on current screen row
+                        var startX = Snap(run.StartX * _charWidth, scale);
+                        var endX = Snap((run.StartX + run.CellCount) * _charWidth, scale);
+                        var rect = new Rect(startX, startYPos, Math.Max(0, endX - startX), rowHeight);
+                        var position = new Point(startX, startYPos);
+
+                        context.FillRectangle(run.Background, rect);
+                        context.DrawText(run.Text, position);
                     }
                     continue;
                 }
@@ -1347,9 +1351,7 @@ namespace Iciclecreek.Terminal
 
                     var startX = Snap(runStartX * _charWidth, scale);
                     var endX = Snap((runStartX + cellCount) * _charWidth, scale);
-                    var startYPos = Snap(screenY * _charHeight, scale);
-                    var endYPos = Snap((screenY + 1) * _charHeight, scale);
-                    var rect = new Rect(startX, startYPos, Math.Max(0, endX - startX), Math.Max(0, endYPos - startYPos));
+                    var rect = new Rect(startX, startYPos, Math.Max(0, endX - startX), rowHeight);
                     var background = cell.GetBackgroundBrush(this.Background);
                     var foreground = cell.GetForegroundBrush(this.Foreground);
                     if (cell.Attributes.IsInverse())
@@ -1362,13 +1364,14 @@ namespace Iciclecreek.Terminal
                         formattedText.SetTextDecorations(td);
 
                     var position = new Point(startX, startYPos);
-                    runs.Add(new CachedTextRun(formattedText, position, rect, background));
+                    // Cache only content-dependent data, not screen position
+                    runs.Add(new CachedTextRun(formattedText, runStartX, cellCount, background));
 
                     context.FillRectangle(background, rect);
                     context.DrawText(formattedText, position);
                 }
 
-                _lineCache[y] = runs;
+                line.Cache = runs;
             }
 
             RenderCursor(context, viewportY, scale);
