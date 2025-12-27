@@ -500,7 +500,7 @@ namespace Iciclecreek.Terminal
                 return;
             }
 
-           // Debug.WriteLine($"[{_instanceId}] OnKeyDown: Key={e.Key}, KeyModifiers={e.KeyModifiers}, KeySymbol='{e.KeySymbol}'");
+            // Debug.WriteLine($"[{_instanceId}] OnKeyDown: Key={e.Key}, KeyModifiers={e.KeyModifiers}, KeySymbol='{e.KeySymbol}'");
 
             try
             {
@@ -800,7 +800,7 @@ namespace Iciclecreek.Terminal
         {
             base.OnLostFocus(e);
 
-          //  Debug.WriteLine($"[{_instanceId}] OnLostFocus");
+            //  Debug.WriteLine($"[{_instanceId}] OnLostFocus");
 
             // Stop blinking when not focused, but keep cursor visible (hollow block)
             _cursorBlinkTimer.Stop();
@@ -904,7 +904,7 @@ namespace Iciclecreek.Terminal
             // Create our own event args and forward to subscribers
             var args = new WindowInfoRequestedEventArgs(e.Request);
             WindowInfoRequested?.Invoke(this, args);
-            
+
             // Copy response data back to the terminal's event args
             if (args.Handled)
             {
@@ -938,9 +938,9 @@ namespace Iciclecreek.Terminal
             await _semaphore.WaitAsync(ct);
             try
             {
-                    var bytes = Utf8NoBom.GetBytes(data);
-                    await ptyConnection.WriterStream.WriteAsync(bytes, 0, bytes.Length, ct);
-                    await ptyConnection.WriterStream.FlushAsync(ct);
+                var bytes = Utf8NoBom.GetBytes(data);
+                await ptyConnection.WriterStream.WriteAsync(bytes, 0, bytes.Length, ct);
+                await ptyConnection.WriterStream.FlushAsync(ct);
             }
             catch (Exception ex)
             {
@@ -1128,7 +1128,7 @@ namespace Iciclecreek.Terminal
                         {
                             _processExitHandled = true;
                             var exitCode = _ptyConnection?.ExitCode ?? 0;
-                            
+
                             await Dispatcher.UIThread.InvokeAsync(() =>
                             {
                                 _terminal.WriteLine($"\nProcess exited with code: {exitCode}\n");
@@ -1182,7 +1182,7 @@ namespace Iciclecreek.Terminal
                 _terminal.WriteLine($"\nProcess exited with code: {e.ExitCode}\n");
                 _terminal.Buffer.ScrollToBottom();
                 InvalidateVisual();
-                
+
                 // Raise event on UI thread so subscribers can safely update UI
                 ProcessExited?.Invoke(this, new ProcessExitedEventArgs(e.ExitCode));
             });
@@ -1283,98 +1283,218 @@ namespace Iciclecreek.Terminal
                 var endYPos = Snap((screenY + 1) * _charHeight, scale);
                 var rowHeight = Math.Max(0, endYPos - startYPos);
 
-                // Try to use cached text runs for this line
-                var textRuns = line.Cache as List<CachedTextRun>;
-                if (textRuns != null)
+                // Check for double-width/double-height line attributes
+                var lineAttr = line.LineAttribute;
+                if (lineAttr == LineAttribute.DoubleWidth ||
+                         lineAttr == LineAttribute.DoubleHeightTop ||
+                         lineAttr == LineAttribute.DoubleHeightBottom)
                 {
-                    foreach (var run in textRuns)
-                    {
-                        // Recalculate position based on current screen row
-                        var startX = Snap(run.StartX * _charWidth, scale);
-                        var endX = Snap((run.StartX + run.CellCount) * _charWidth, scale);
-                        var rect = new Rect(startX, startYPos, Math.Max(0, endX - startX), rowHeight);
-                        var position = new Point(startX, startYPos);
-
-                        context.FillRectangle(run.Background, rect);
-                        context.DrawText(run.Text, position);
-                    }
-                    continue;
+                    RenderDoubleWidthLine(context, line, screenY, startYPos, rowHeight, lineAttr, scale);
                 }
-
-                // Build and cache text runs for this line
-                var runs = new List<CachedTextRun>();
-
-                for (int x = 0; x < _terminal.Cols;)
+                else
                 {
-                    if (x >= line.Length)
-                        break;
-                    var cell = line[x];
-                    string text = String.Empty;
-                    int cellCount = 0;
-                    int runStartX = 0;
-
-                    // Skip placeholder cells (width 0) that follow wide characters
-                    if (cell.Width == 0)
-                    {
-                        Debug.Assert(cell.Content == BufferCell.Empty.Content, "Placeholder cell should be null content");
-                        x++;
-                        continue;
-                    }
-                    else if (cell.Width == 1)
-                    {
-                        // Collect consecutive cells with same attributes
-                        var textBuilder = new StringBuilder();
-                        cellCount = 0;  // Total cell positions consumed (including wide char placeholders)
-                        runStartX = x;
-                        while (x < line.Length && x < _terminal.Cols)
-                        {
-                            var currentCell = line[x];
-
-                            // Stop if we hit a different attribute or a placeholder cell mid-run
-                            if (currentCell.Width != 1 || currentCell.Attributes != cell.Attributes)
-                                break;
-                            textBuilder.Append(currentCell.Content);
-                            cellCount += currentCell.Width;  // Wide chars add 2, normal chars add 1
-
-                            // Skip the placeholder cell that follows a wide character
-                            x += currentCell.Width;
-                        }
-                        text = textBuilder.ToString();
-                    }
-                    else if (cell.Width == 2)
-                    {
-                        text = cell.Content;
-                        cellCount = cell.Width;
-                        runStartX = x;
-                        x += cell.Width;  // Move past wide character and its placeholder
-                    }
-
-                    var startX = Snap(runStartX * _charWidth, scale);
-                    var endX = Snap((runStartX + cellCount) * _charWidth, scale);
-                    var rect = new Rect(startX, startYPos, Math.Max(0, endX - startX), rowHeight);
-                    var background = cell.GetBackgroundBrush(this.Background);
-                    var foreground = cell.GetForegroundBrush(this.Foreground);
-                    if (cell.Attributes.IsInverse())
-                        (foreground, background) = (background, foreground);
-
-                    var typeface = new Typeface(FontFamily, cell.GetFontStyle(), cell.GetFontWeight());
-                    var formattedText = new FormattedText(text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, typeface, FontSize, foreground);
-                    var td = cell.GetTextDecorations();
-                    if (td != null)
-                        formattedText.SetTextDecorations(td);
-
-                    var position = new Point(startX, startYPos);
-                    // Cache only content-dependent data, not screen position
-                    runs.Add(new CachedTextRun(formattedText, runStartX, cellCount, background));
-
-                    context.FillRectangle(background, rect);
-                    context.DrawText(formattedText, position);
+                    RenderNormalLine(context, line, screenY, startYPos, rowHeight, scale);
                 }
-
-                line.Cache = runs;
             }
 
             RenderCursor(context, viewportY, scale);
+        }
+
+        /// <summary>
+        /// Renders a normal (single-width, single-height) line.
+        /// </summary>
+        private void RenderNormalLine(DrawingContext context, BufferLine line, int screenY, double startYPos, double rowHeight, double scale)
+        {
+            // Try to use cached text runs for this line
+            var textRuns = line.Cache as List<CachedTextRun>;
+            if (textRuns != null)
+            {
+                foreach (var run in textRuns)
+                {
+                    // Recalculate position based on current screen row
+                    var startX = Snap(run.StartX * _charWidth, scale);
+                    var endX = Snap((run.StartX + run.CellCount) * _charWidth, scale);
+                    var rect = new Rect(startX, startYPos, Math.Max(0, endX - startX), rowHeight);
+                    var position = new Point(startX, startYPos);
+
+                    context.FillRectangle(run.Background, rect);
+                    context.DrawText(run.Text, position);
+                }
+                return;
+            }
+
+            // Build and cache text runs for this line
+            var runs = new List<CachedTextRun>();
+
+            for (int x = 0; x < _terminal.Cols;)
+            {
+                if (x >= line.Length)
+                    break;
+                var cell = line[x];
+                string text = String.Empty;
+                int cellCount = 0;
+                int runStartX = 0;
+
+                // Skip placeholder cells (width 0) that follow wide characters
+                if (cell.Width == 0)
+                {
+                    Debug.Assert(cell.Content == BufferCell.Empty.Content, "Placeholder cell should be null content");
+                    x++;
+                    continue;
+                }
+                else if (cell.Width == 1)
+                {
+                    // Collect consecutive cells with same attributes
+                    var textBuilder = new StringBuilder();
+                    cellCount = 0;  // Total cell positions consumed (including wide char placeholders)
+                    runStartX = x;
+                    while (x < line.Length && x < _terminal.Cols)
+                    {
+                        var currentCell = line[x];
+
+                        // Stop if we hit a different attribute or a placeholder cell mid-run
+                        if (currentCell.Width != 1 || currentCell.Attributes != cell.Attributes)
+                            break;
+                        textBuilder.Append(currentCell.Content);
+                        cellCount += currentCell.Width;  // Wide chars add 2, normal chars add 1
+
+                        // Skip the placeholder cell that follows a wide character
+                        x += currentCell.Width;
+                    }
+                    text = textBuilder.ToString();
+                }
+                else if (cell.Width == 2)
+                {
+                    text = cell.Content;
+                    cellCount = cell.Width;
+                    runStartX = x;
+                    x += cell.Width;  // Move past wide character and its placeholder
+                }
+
+                var startX = Snap(runStartX * _charWidth, scale);
+                var endX = Snap((runStartX + cellCount) * _charWidth, scale);
+                var rect = new Rect(startX, startYPos, Math.Max(0, endX - startX), rowHeight);
+                var background = cell.GetBackgroundBrush(this.Background);
+                var foreground = cell.GetForegroundBrush(this.Foreground);
+                if (cell.Attributes.IsInverse())
+                    (foreground, background) = (background, foreground);
+
+                var typeface = new Typeface(FontFamily, cell.GetFontStyle(), cell.GetFontWeight());
+                var formattedText = new FormattedText(text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, typeface, FontSize, foreground);
+                var td = cell.GetTextDecorations();
+                if (td != null)
+                    formattedText.SetTextDecorations(td);
+
+                var position = new Point(startX, startYPos);
+                // Cache only content-dependent data, not screen position
+                runs.Add(new CachedTextRun(formattedText, runStartX, cellCount, background));
+
+                context.FillRectangle(background, rect);
+                context.DrawText(formattedText, position);
+            }
+
+            line.Cache = runs;
+        }
+
+        /// <summary>
+        /// Renders a double-width or double-height line using transforms and clipping.
+        /// </summary>
+        private void RenderDoubleWidthLine(DrawingContext context, BufferLine line, int screenY, double startYPos, double rowHeight, LineAttribute lineAttr, double scale)
+        {
+            // Don't cache double-width lines (transform makes caching complex)
+            line.Cache = null;
+
+            // Calculate the clip rect for this row
+            var clipRect = new Rect(0, startYPos, _terminal.Cols * _charWidth, rowHeight);
+
+            // For double-height lines, we need to clip to show only top or bottom half
+            double scaleX = 2.0;
+            double scaleY = lineAttr.IsDoubleHeight() ? 2.0 : 1.0;
+
+            // Calculate transform origin and translation
+            // We scale from origin (0, startYPos) and then may need to shift for bottom half
+            double translateY = 0;
+            if (lineAttr == LineAttribute.DoubleHeightBottom)
+            {
+                // For bottom half, we render at 2x scale but shift up by one row height
+                // so the bottom half of the scaled text is visible
+                translateY = -rowHeight;
+            }
+
+            using (context.PushClip(clipRect))
+            {
+                // Create transform: scale 2x horizontally (and 2x vertically for double-height)
+                // The transform origin is at (0, startYPos)
+                var scaleTransform = Matrix.CreateScale(scaleX, scaleY);
+                var translateToOrigin = Matrix.CreateTranslation(0, -startYPos);
+                var translateBack = Matrix.CreateTranslation(0, startYPos + translateY);
+                var combinedTransform = translateToOrigin * scaleTransform * translateBack;
+
+                using (context.PushTransform(combinedTransform))
+                {
+                    // Render the line content at normal size - the transform will scale it
+                    // Only render the first half of the columns since they'll be doubled
+                    int effectiveCols = _terminal.Cols / 2;
+
+                    for (int x = 0; x < effectiveCols && x < line.Length;)
+                    {
+                        var cell = line[x];
+                        string text = String.Empty;
+                        int cellCount = 0;
+                        int runStartX = 0;
+
+                        // Skip placeholder cells (width 0) that follow wide characters
+                        if (cell.Width == 0)
+                        {
+                            x++;
+                            continue;
+                        }
+                        else if (cell.Width == 1)
+                        {
+                            // Collect consecutive cells with same attributes
+                            var textBuilder = new StringBuilder();
+                            cellCount = 0;
+                            runStartX = x;
+                            while (x < line.Length && x < effectiveCols)
+                            {
+                                var currentCell = line[x];
+                                if (currentCell.Width != 1 || currentCell.Attributes != cell.Attributes)
+                                    break;
+                                textBuilder.Append(currentCell.Content);
+                                cellCount += currentCell.Width;
+                                x += currentCell.Width;
+                            }
+                            text = textBuilder.ToString();
+                        }
+                        else if (cell.Width == 2)
+                        {
+                            text = cell.Content;
+                            cellCount = cell.Width;
+                            runStartX = x;
+                            x += cell.Width;
+                        }
+
+                        var startX = Snap(runStartX * _charWidth, scale);
+                        var endX = Snap((runStartX + cellCount) * _charWidth, scale);
+                        var rect = new Rect(startX, startYPos, Math.Max(0, endX - startX), rowHeight);
+                        var background = cell.GetBackgroundBrush(this.Background);
+                        var foreground = cell.GetForegroundBrush(this.Foreground);
+                        if (cell.Attributes.IsInverse())
+                            (foreground, background) = (background, foreground);
+
+                        var typeface = new Typeface(FontFamily, cell.GetFontStyle(), cell.GetFontWeight());
+                        var formattedText = new FormattedText(text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, typeface, FontSize, foreground);
+                        var td = cell.GetTextDecorations();
+                        if (td != null)
+                            formattedText.SetTextDecorations(td);
+
+                        var position = new Point(startX, startYPos);
+
+                        context.FillRectangle(background, rect);
+                        context.DrawText(formattedText, position);
+                    }
+                }
+            }
         }
 
         private void RenderCursor(DrawingContext context, int viewportY, double scale)
