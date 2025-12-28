@@ -483,7 +483,6 @@ namespace Iciclecreek.Terminal
                     var line = _terminal.Buffer.GetLine(y);
                     if (line.Any(cell => cell.Attributes.IsBlink()))
                     {
-                        Debug.WriteLine($"{y} Isblink");
                         line.Cache = null;
                     }
                 }
