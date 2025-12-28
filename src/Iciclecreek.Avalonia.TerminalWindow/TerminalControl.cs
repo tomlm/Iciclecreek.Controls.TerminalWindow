@@ -6,9 +6,11 @@ using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Threading;
+using Porta.Pty;
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using XTerm;
 
 namespace Iciclecreek.Terminal
 {
@@ -169,6 +171,17 @@ namespace Iciclecreek.Terminal
         public TerminalControl()
         {
         }
+
+        public XTerm.Terminal Terminal => _terminalView!.Terminal;
+
+
+        public void WaitForExit(int ms) => _terminalView!.WaitForExit(ms);
+
+        public void Kill() => _terminalView!.Kill();
+
+        public int ExitCode => _terminalView!.ExitCode;
+
+        public int Pid => _terminalView!.Pid;
 
         protected override void OnGotFocus(GotFocusEventArgs e)
         {

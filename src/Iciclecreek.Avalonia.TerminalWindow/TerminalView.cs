@@ -319,6 +319,16 @@ namespace Iciclecreek.Terminal
 
         public int ViewportLines => _terminal.Rows;
 
+        public XTerm.Terminal Terminal => _terminal;
+
+        public void WaitForExit(int ms) => _ptyConnection!.WaitForExit(ms);
+
+        public void Kill() => _ptyConnection!.Kill();
+
+        public int ExitCode => _ptyConnection!.ExitCode;
+
+        public int Pid => _ptyConnection!.Pid;
+
         public FontFamily FontFamily
         {
             get => GetValue(FontFamilyProperty);
@@ -478,7 +488,7 @@ namespace Iciclecreek.Terminal
             if (CursorBlink && IsFocused)
             {
                 _cursorBlinkOn = !_cursorBlinkOn;
-                for(int y=0; y < _terminal.Rows; y++)
+                for (int y = 0; y < _terminal.Rows; y++)
                 {
                     var line = _terminal.Buffer.GetLine(y);
                     if (line.Any(cell => cell.Attributes.IsBlink()))
