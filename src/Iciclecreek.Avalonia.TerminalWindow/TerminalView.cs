@@ -503,9 +503,12 @@ namespace Iciclecreek.Terminal
 
         protected override async void OnKeyDown(KeyEventArgs e)
         {
+            Debug.WriteLine($"[TerminalView] OnKeyDown: Key={e.Key}, IsFocused={IsFocused}, Source={e.Source?.GetType().Name}, KeySymbol='{e.KeySymbol}'");
+            
             // Only process input if this terminal has focus
             if (!IsFocused)
             {
+                Debug.WriteLine($"[TerminalView] Not focused, passing to base");
                 base.OnKeyDown(e);
                 return;
             }
@@ -514,11 +517,12 @@ namespace Iciclecreek.Terminal
             var ptyConnection = _ptyConnection;
             if (ptyConnection == null)
             {
+                Debug.WriteLine($"[TerminalView] No PTY connection");
                 base.OnKeyDown(e);
                 return;
             }
 
-            // Debug.WriteLine($"[{_instanceId}] OnKeyDown: Key={e.Key}, KeyModifiers={e.KeyModifiers}, KeySymbol='{e.KeySymbol}'");
+            Debug.WriteLine($"[TerminalView] Processing key: {e.Key}");
 
             try
             {
@@ -531,7 +535,6 @@ namespace Iciclecreek.Terminal
                     var sequence = GenerateWin32InputSequence(e, isKeyDown: true);
                     if (!string.IsNullOrEmpty(sequence))
                     {
-                        // Mark as handled BEFORE await to prevent Avalonia from processing
                         e.Handled = true;
                         await SendToPtyAsync(sequence);
                     }
@@ -547,8 +550,6 @@ namespace Iciclecreek.Terminal
                     var sequence = _terminal.GenerateKeyInput(xtermKey.Value, modifiers);
                     if (!string.IsNullOrEmpty(sequence))
                     {
-                        // Mark as handled BEFORE await to prevent Avalonia from processing
-                        // This is critical for Tab to prevent focus navigation
                         e.Handled = true;
                         await SendToPtyAsync(sequence);
                     }
@@ -563,7 +564,6 @@ namespace Iciclecreek.Terminal
                         var sequence = _terminal.GenerateCharInput(keyChar, modifiers);
                         if (!string.IsNullOrEmpty(sequence))
                         {
-                            // Mark as handled BEFORE await
                             e.Handled = true;
                             await SendToPtyAsync(sequence);
                         }
@@ -571,8 +571,18 @@ namespace Iciclecreek.Terminal
                     return;
                 }
 
-                // Regular characters without Ctrl/Alt: let TextInput handle them
-                // Don't mark as handled so OnTextInput will be called
+                // Try to get a printable character - first from KeySymbol, then from key mapping
+                // This is critical for Consolonia where KeySymbol may be empty
+                if (TryGetPrintableChar(e, out var printableChar))
+                {
+                    Debug.WriteLine($"[TerminalView] Sending char '{printableChar}' to PTY");
+                    e.Handled = true;
+                    await SendToPtyAsync(printableChar.ToString());
+                    return;
+                }
+
+                // If we couldn't handle it, let TextInput try (for desktop Avalonia)
+                Debug.WriteLine($"[TerminalView] Key not handled, deferring to TextInput");
             }
             catch (Exception ex)
             {
@@ -618,9 +628,12 @@ namespace Iciclecreek.Terminal
 
         protected override async void OnTextInput(TextInputEventArgs e)
         {
+            Debug.WriteLine($"[TerminalView] OnTextInput: Text='{e.Text}', IsFocused={IsFocused}");
+            
             // Only process input if this terminal has focus
             if (!IsFocused)
             {
+                Debug.WriteLine($"[TerminalView] OnTextInput: Not focused, passing to base");
                 base.OnTextInput(e);
                 return;
             }
@@ -629,16 +642,21 @@ namespace Iciclecreek.Terminal
             var ptyConnection = _ptyConnection;
             if (ptyConnection == null || string.IsNullOrEmpty(e.Text))
             {
+                Debug.WriteLine($"[TerminalView] OnTextInput: No PTY or empty text");
                 base.OnTextInput(e);
                 return;
             }
 
             // In Win32 Input Mode, text input is handled via KeyDown/KeyUp events
             if (_terminal.Win32InputMode)
+            {
+                Debug.WriteLine($"[TerminalView] OnTextInput: Win32 input mode, skipping");
                 return;
+            }
 
             try
             {
+                Debug.WriteLine($"[TerminalView] OnTextInput: Sending '{e.Text}' to PTY");
                 await SendToPtyAsync(e.Text);
                 e.Handled = true;
             }
@@ -793,7 +811,7 @@ namespace Iciclecreek.Terminal
         {
             base.OnGotFocus(e);
 
-            //Debug.WriteLine($"[{_instanceId}] OnGotFocus");
+            Debug.WriteLine($"[TerminalView] OnGotFocus: Source={e.Source?.GetType().Name}");
 
             // Reset blink state to visible when focused
             _cursorBlinkOn = true;
@@ -818,7 +836,7 @@ namespace Iciclecreek.Terminal
         {
             base.OnLostFocus(e);
 
-            //  Debug.WriteLine($"[{_instanceId}] OnLostFocus");
+            Debug.WriteLine($"[TerminalView] OnLostFocus");
 
             // Stop blinking when not focused, but keep cursor visible (hollow block)
             _cursorBlinkTimer.Stop();
@@ -941,6 +959,8 @@ namespace Iciclecreek.Terminal
         private async void OnTerminalDataReceived(object? sender, XT.Events.TerminalEvents.DataEventArgs e)
         {
             // Terminal wants to send data (typically in response to device status queries, etc.)
+
+
             await SendToPtyAsync(e.Data);
         }
 
@@ -1047,39 +1067,91 @@ namespace Iciclecreek.Terminal
             if (!string.IsNullOrEmpty(e.KeySymbol) && e.KeySymbol.Length == 1 && !char.IsControl(e.KeySymbol[0]))
             {
                 character = e.KeySymbol[0];
+                Debug.WriteLine($"[TerminalView] TryGetPrintableChar: Got '{character}' from KeySymbol");
                 return true;
             }
 
-            // Fallback mapping for cases where KeySymbol is empty (e.g., Alt+<char> on some platforms)
-            return TryMapKeyToChar(e.Key, e.KeyModifiers, out character);
+            // Fallback mapping for cases where KeySymbol is empty (e.g., Consolonia, or Alt+<char> on some platforms)
+            var result = TryMapKeyToChar(e.Key, e.KeyModifiers, out character);
+            Debug.WriteLine($"[TerminalView] TryGetPrintableChar: TryMapKeyToChar returned {result}, char='{character}', Key={e.Key}");
+            return result;
         }
 
         private bool TryMapKeyToChar(Key key, KeyModifiers modifiers, out char character)
         {
             character = default;
+            bool hasShift = modifiers.HasFlag(KeyModifiers.Shift);
 
+            // Letters A-Z
             if (key >= Key.A && key <= Key.Z)
             {
                 var offset = key - Key.A;
-                var isUpper = modifiers.HasFlag(KeyModifiers.Shift);
-                character = (char)((isUpper ? 'A' : 'a') + offset);
+                character = (char)((hasShift ? 'A' : 'a') + offset);
                 return true;
             }
 
-            if (key >= Key.D0 && key <= Key.D9 && !modifiers.HasFlag(KeyModifiers.Shift))
+            // Numbers 0-9 (with shift symbols for US keyboard)
+            if (key >= Key.D0 && key <= Key.D9)
             {
-                var offset = key - Key.D0;
+                if (hasShift)
+                {
+                    // Shift + number = symbol (US keyboard layout)
+                    character = key switch
+                    {
+                        Key.D1 => '!',
+                        Key.D2 => '@',
+                        Key.D3 => '#',
+                        Key.D4 => '$',
+                        Key.D5 => '%',
+                        Key.D6 => '^',
+                        Key.D7 => '&',
+                        Key.D8 => '*',
+                        Key.D9 => '(',
+                        Key.D0 => ')',
+                        _ => default
+                    };
+                }
+                else
+                {
+                    var offset = key - Key.D0;
+                    character = (char)('0' + offset);
+                }
+                return character != default;
+            }
+
+            // Numpad numbers
+            if (key >= Key.NumPad0 && key <= Key.NumPad9)
+            {
+                var offset = key - Key.NumPad0;
                 character = (char)('0' + offset);
                 return true;
             }
 
-            if (key == Key.Space)
+            // Common punctuation and OEM keys (US keyboard layout)
+            character = key switch
             {
-                character = ' ';
-                return true;
-            }
+                Key.Space => ' ',
+                Key.OemPeriod => hasShift ? '>' : '.',
+                Key.OemComma => hasShift ? '<' : ',',
+                Key.OemMinus => hasShift ? '_' : '-',
+                Key.OemPlus => hasShift ? '+' : '=',
+                Key.OemSemicolon => hasShift ? ':' : ';',
+                Key.OemQuotes => hasShift ? '"' : '\'',
+                Key.OemTilde => hasShift ? '~' : '`',
+                Key.OemOpenBrackets => hasShift ? '{' : '[',
+                Key.OemCloseBrackets => hasShift ? '}' : ']',
+                Key.OemPipe => hasShift ? '|' : '\\',
+                Key.OemBackslash => hasShift ? '|' : '\\',
+                Key.OemQuestion => hasShift ? '?' : '/',
+                Key.Multiply => '*',
+                Key.Add => '+',
+                Key.Subtract => '-',
+                Key.Divide => '/',
+                Key.Decimal => '.',
+                _ => default
+            };
 
-            return false;
+            return character != default;
         }
 
         private async void LaunchProcess()
@@ -1456,7 +1528,7 @@ namespace Iciclecreek.Terminal
                     // Only render the first half of the columns since they'll be doubled
                     int effectiveCols = _terminal.Cols / 2;
 
-                    for (int x = 0; x < effectiveCols && x < line.Length;)
+                    for (int x = 0; x < effectiveCols && x < line.Length; )
                     {
                         var cell = line[x];
                         string text = String.Empty;
@@ -1619,17 +1691,53 @@ namespace Iciclecreek.Terminal
         private string GenerateWin32InputSequence(KeyEventArgs e, bool isKeyDown)
         {
             var vk = ConvertAvaloniaKeyToVirtualKey(e.Key);
-            if (vk == 0 && string.IsNullOrEmpty(e.KeySymbol))
+            
+            // If we can't get a virtual key code, we can't generate a Win32 sequence
+            if (vk == 0)
+            {
+                Debug.WriteLine($"[TerminalView] Win32: No VK for Key={e.Key}");
                 return string.Empty;
+            }
 
             // Get scan code (we use 0 as we don't have direct access to hardware scan codes)
             var scanCode = 0;
 
-            // Get unicode character
+            // Get unicode character - first try KeySymbol, then fall back to key mapping
+            // Note: Special keys (arrows, Enter, etc.) have unicodeChar=0 which is correct
             int unicodeChar = 0;
             if (!string.IsNullOrEmpty(e.KeySymbol) && e.KeySymbol.Length >= 1)
             {
                 unicodeChar = char.ConvertToUtf32(e.KeySymbol, 0);
+            }
+            else if (TryMapKeyToChar(e.Key, e.KeyModifiers, out var mappedChar))
+            {
+                // Fallback for Consolonia where KeySymbol is empty
+                unicodeChar = mappedChar;
+            }
+            // Special case: Enter key should send CR (0x0D)
+            else if (e.Key == Key.Enter)
+            {
+                unicodeChar = 0x0D;
+            }
+            // Special case: Tab key should send Tab (0x09)
+            else if (e.Key == Key.Tab)
+            {
+                unicodeChar = 0x09;
+            }
+            // Special case: Backspace should send BS (0x08)
+            else if (e.Key == Key.Back)
+            {
+                unicodeChar = 0x08;
+            }
+            // Special case: Escape should send ESC (0x1B)
+            else if (e.Key == Key.Escape)
+            {
+                unicodeChar = 0x1B;
+            }
+            // Special case: Space
+            else if (e.Key == Key.Space)
+            {
+                unicodeChar = 0x20;
             }
 
             // Build control key state flags
@@ -1637,6 +1745,8 @@ namespace Iciclecreek.Terminal
 
             // Repeat count (always 1 for our purposes)
             var repeatCount = 1;
+
+            Debug.WriteLine($"[TerminalView] Win32 sequence: Key={e.Key}, vk={vk}, uc={unicodeChar}, char='{(unicodeChar > 31 ? (char)unicodeChar : '?')}'");
 
             // Format: ESC [ Vk ; Sc ; Uc ; Kd ; Cs ; Rc _
             return $"\u001b[{vk};{scanCode};{unicodeChar};{(isKeyDown ? 1 : 0)};{(int)controlKeyState};{repeatCount}_";

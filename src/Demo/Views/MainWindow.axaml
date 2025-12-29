@@ -9,9 +9,9 @@
 		RequestedThemeVariant="Dark"
 		Icon="/Assets/avalonia-logo.ico"
 		Title="Avalonia XTerm Terminal">
-	<Grid RowDefinitions="Auto *">
-		<Menu Grid.Row="0">
-			<MenuItem Header="_Process" Grid.Row="0">
+	<DockPanel>
+		<Menu DockPanel.Dock="Top">
+			<MenuItem Header="_Process">
 				<MenuItem Header="_New" Click="OnNewClicked"/>
 				<MenuItem Header="_Run" Click="OnStartClicked"/>
 				<Separator/>
@@ -19,6 +19,6 @@
 			</MenuItem>
 		</Menu>
 
-		<wm:WindowsPanel Grid.Row="1"/>
-	</Grid>
+		<wm:WindowsPanel x:Name="Windows" />
+	</DockPanel>
 </Window>

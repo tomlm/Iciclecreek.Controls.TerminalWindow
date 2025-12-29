@@ -22,7 +22,7 @@ public partial class MainWindow : Window
             FontFamily = "Cascadia Mono",
             CloseOnProcessExit = true
         };
-        terminalWindow.Show();
+        terminalWindow.Show(Windows);
     }
 
 
@@ -48,7 +48,7 @@ public partial class MainWindow : Window
                 FontFamily = "Cascadia Mono",
                 CloseOnProcessExit = true
             };
-            terminalWindow.Show();
+            terminalWindow.Show(Windows);
         }
     }
 
