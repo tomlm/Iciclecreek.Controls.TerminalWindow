@@ -19,6 +19,6 @@
 			</MenuItem>
 		</Menu>
 
-		<wm:WindowsPanel x:Name="Windows" />
+		<wm:WindowsPanel x:Name="Windows" Background="DarkGray"/>
 	</DockPanel>
 </Window>
