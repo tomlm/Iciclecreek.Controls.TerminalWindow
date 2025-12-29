@@ -522,7 +522,7 @@ namespace Iciclecreek.Terminal
                 return;
             }
 
-            Debug.WriteLine($"[TerminalView] Processing key: {e.Key}");
+            Debug.WriteLine($"[TerminalView] Processing key: {e.Key}, Win32InputMode={_terminal.Win32InputMode}");
 
             try
             {
@@ -537,8 +537,11 @@ namespace Iciclecreek.Terminal
                     {
                         e.Handled = true;
                         await SendToPtyAsync(sequence);
+                        return;
                     }
-                    return;
+                    // If we couldn't generate a Win32 sequence, fall through to normal handling
+                    // This can happen for keys that don't have a virtual key mapping
+                    Debug.WriteLine($"[TerminalView] Win32InputMode: No sequence generated for {e.Key}, falling back to normal handling");
                 }
 
                 // Convert Avalonia key to XTerm key
