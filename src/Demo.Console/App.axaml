@@ -5,6 +5,6 @@
 			 x:Class="Demo.Console.App"
 			 RequestedThemeVariant="Default">
 	<Application.Styles>
-		<console:ModernTheme />
+		<console:TurboVisionElegantTheme />
 	</Application.Styles>
 </Application>
